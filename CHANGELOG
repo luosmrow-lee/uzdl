@@ -1,0 +1,47 @@
+2026-09-09  luosmrow-lee <luosmrowlee@tuta.io>
+
+	* Release 1.0.0
+	* uZDL is a fork of Lcferrum's ZDL 3-1.2 ported to Qt 6. Version numbering
+	  restarts here rather than continuing the 3-1.x line, and this log covers
+	  uZDL only; the ZDL and qZDL history lives in their own repositories.
+	* Added:
+		- idgames tab: the whole Doom archive browsable and searchable offline from a mirror's own listing, with the author's description shown per entry
+		- idgames results carry Name, Type, Modified and Size columns, sortable on their real values
+		- idgames downloads unpack into the PWAD folder, several at a time, fetched one after another so a batch does not open a dozen sockets at a mirror
+		- Installed column in the idgames results, read from the marker each install leaves behind, so nothing is downloaded twice by accident
+		- Open on Doomworld button on the idgames tab, for the entry's page with its reviews, screenshots and votes
+		- PWAD library pane: one folder scanned recursively, grouped by directory, with a filter and Folders/Newest/Name views
+		- The PWAD folder is watched, so files appearing on disc show up without a rescan
+		- The PWAD library also appears inside the preset editor, so files can be picked where the preset is being built
+		- Presets: named external file lists, saved from the current list and loaded, appended, renamed, reordered, exported as .zdl or deleted
+		- Presets carry the source port and the IWAD they are meant to run with, applied when one is loaded or launched but never when it is appended; either can be left alone so the launch tab's own choice stands
+		- Launch button on the presets pane, to load a preset and start the game in one press
+		- Delete button on the presets pane, which was previously only in the right click menu
+		- Portable mode: an empty uzdl_portable.ini beside the executable makes that file the only configuration read or written
+		- Theme selector: System, Light or Dark
+		- Update check against the project's GitHub releases, optionally once a day at start, with the release notes shown; on Windows the update installs itself: the package is downloaded, checked against the SHA-256 digest GitHub publishes, swapped in over the old files and uZDL restarts into it, the configuration untouched. A release can be skipped
+		- Run button beside the source port drop-down, to start a port on its own so ports that update themselves can do so
+		- Pane widths are remembered between sessions
+		- Each source port can carry its own parameters, entered in its dialog and added to the command line whenever that port is launched; ZDL had the field but stored nothing
+		- Import button on the presets pane, to make a preset from a .zdl file
+		- Anything inside the uZDL folder - source ports, IWADs, the PWAD folder, external files and preset entries - is stored relative to it, so the folder moves as one. For ports and IWADs the add and edit dialogs default to that and can keep the absolute path instead; portable mode creates sourceports and iwads folders for them
+	* Changed:
+		- Ported from Qt 4.8 to Qt 6: QRegExp, qSort, QMutex::Recursive, QString::SkipEmptyParts and the Qt 4 platform macros all replaced
+		- Built with CMake and a C++17 compiler; Qt 6.5 or newer is required
+		- No longer needs the Visual C++ 2010 redistributable
+		- Renamed to uZDL throughout the interface, the version resource and the licence headers
+		- The PWAD library and the presets share one column, stacked, which leaves room for the settings pane the four column layout pushed off screen
+		- New icon set, each icon carrying 16, 32, 48 and 256 pixel images instead of a single 48 pixel one
+		- The window icon is a PNG rather than an XPM, so its antialiased edges survive
+		- Launching with no IWAD selected asks first, instead of handing the port a launch it may refuse
+	* Fixed:
+		- The locking selector tested QT_VERSION against a malformed constant, so one branch was always taken and the other never compiled
+		- Saving a preset with no name closed the dialog and threw the work away; it now says so and stays open
+		- ZDLFilePane.h, ZDLSettingsPane.h and ZDLSettingsTab.h had no include guards
+		- ZDLQSplitter derived from a virtual base that nothing needed and that moc cannot cast through
+		- The blackbox logger used __PRETTY_FUNCTION__ and so never compiled on MSVC
+		- The Windows resource script pulled in the MFC header afxres.h, which a plain C++ toolchain does not have
+		- The debug logger formatted pointers through a type Qt does not have, so 32-bit builds with logging enabled could not compile
+	* Removed:
+		- The qmake project and the Visual Studio 2010 solution, replaced by CMake
+		- ico_icon.xpm, replaced by a PNG resource

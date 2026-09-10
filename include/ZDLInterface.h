@@ -1,0 +1,75 @@
+/*
+ * This file is part of uZDL
+ * Copyright (C) 2007-2010  Cody Harris
+ * Copyright (C) 2018-2019  Lcferrum
+ * Copyright (C) 2026  luosmrow-lee
+ * 
+ * uZDL is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+ 
+#ifndef _ZDLINTERFACE_H_
+#define _ZDLINTERFACE_H_
+
+#include <QtWidgets>
+#include <QObject>
+#include "ZDLWidget.h"
+#include "ZDLMultiPane.h"
+
+
+class ZDLInterface: public ZDLWidget{
+Q_OBJECT
+public: 
+	ZDLInterface( QWidget *parent=0);
+	void startRead();
+	void writeConfig();
+	virtual void newConfig();
+	virtual void rebuild();
+public slots:
+	void loadZdlFile();
+	void saveZdlFile();
+private slots:
+	void sendSignals();
+	void mclick();
+	void launch();
+	void saveConfigFile();
+	void loadConfigFile();
+	void aboutClick();
+	void showCommandline();
+	void exitzdl();
+	void clearAllFields();
+	void clearAllPWads();
+	void clearEverything();
+	void importCurrentConfig();
+	//Splitting the top pane can only be done once the splitter has a real
+	//width, which is not the case while it is being built.
+	void balanceTopPane();
+private:
+	QLayout *getBottomPane();
+	QLayout *getButtonPane();
+	QLayout *getTopPane();
+	QSplitter *topSplit;
+	//The PWAD library and the presets, stacked one above the other.
+	QSplitter *leftStack;
+	void buttonPaneNewConfig();
+	void bottomPaneRebuild();
+	void bottomPaneNewConfig();
+	
+	QPushButton *btnEpr;
+	QPushButton *btnZDL;
+	QPushButton *btnLaunch;
+	QVBoxLayout *box;
+	ZDLMultiPane *mpane;
+	QLineEdit *extraArgs;
+};
+#endif
