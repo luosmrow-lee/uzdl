@@ -17,7 +17,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(uzdl
-    VERSION 1.0.0
+    VERSION 1.0.1
     DESCRIPTION "Launcher for ZDoom based Doom engine source ports"
     LANGUAGES C CXX)
 

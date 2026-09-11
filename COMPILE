@@ -81,13 +81,14 @@ unpacking a newer version over an old folder must never replace the
 configuration, so portable mode remains something the user opts into by
 creating that file. The version comes from the project() line in
 CMakeLists.txt; keep it in step with ZDL_VERSION_STRING in
-include/zdlcommon.h and the date line at the top of CHANGELOG.
+include/zdlcommon.h, the four version fields in res/Win32/qzdl.rc (a UTF-16
+file, so grep will not find them) and the date line at the top of CHANGELOG.
 
 The GitHub Actions workflow in .github/workflows/release.yml runs the same
 target on a Windows runner. Pushing a tag named v<version> builds the
 package and publishes it as a GitHub release, with the top CHANGELOG entry
 as the release notes; running the workflow by hand just keeps the zip as a
-workflow artifact. So a release is: bump the version in the three places
+workflow artifact. So a release is: bump the version in the four places
 above, commit, then
 
 	git tag -a v1.0.0 -m "uZDL 1.0.0"
