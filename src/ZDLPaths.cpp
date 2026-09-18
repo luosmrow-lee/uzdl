@@ -23,7 +23,25 @@
 
 QString ZDLPaths::appDir()
 {
-	return QDir::cleanPath(QCoreApplication::applicationDirPath());
+	QString dir=QDir::cleanPath(QCoreApplication::applicationDirPath());
+
+#if defined(Q_OS_LINUX)
+	//Inside an AppImage the executable runs from a read-only mount that is
+	//gone once it exits, so the folder uZDL is "in" is the one holding the
+	//AppImage file. The runtime names both: APPDIR for the mount, APPIMAGE
+	//for the file. Only an APPDIR this executable actually lives under
+	//counts, so that a pair of variables inherited from some other AppImage
+	//that started uZDL is ignored.
+	QString mount=QDir::cleanPath(qEnvironmentVariable("APPDIR"));
+	QString image=qEnvironmentVariable("APPIMAGE");
+	if (!mount.isEmpty()&&!image.isEmpty()&&(dir==mount||dir.startsWith(mount+"/"))) {
+		QFileInfo fi(image);
+		QString real=fi.canonicalFilePath();
+		dir=QDir::cleanPath(QFileInfo(real.isEmpty()?image:real).absolutePath());
+	}
+#endif
+
+	return dir;
 }
 
 QString ZDLPaths::sourcePortsDir()

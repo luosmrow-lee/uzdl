@@ -1,7 +1,8 @@
-# Builds the Windows package and, for a v* tag, publishes it as a GitHub
-# release with the top CHANGELOG entry as the notes. A manual run only
-# builds and keeps the zip as a workflow artifact, for trying the pipeline
-# without cutting a release.
+# Builds the release packages, a zip for Windows and an AppImage for Linux,
+# and, for a v* tag, publishes them together as a GitHub release with the
+# top CHANGELOG entry as the notes. A manual run only builds and keeps the
+# packages as workflow artifacts, for trying the pipeline without cutting a
+# release.
 name: Release
 
 on:
@@ -10,7 +11,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  QT_VERSION: '6.10.*'
 
 jobs:
   windows:
@@ -21,7 +25,7 @@ jobs:
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.10.*'
+          version: ${{ env.QT_VERSION }}
           arch: win64_msvc2022_64
           cache: true
 
@@ -31,37 +35,93 @@ jobs:
       - name: Build and package
         run: cmake --build build --config Release --target dist
 
-      - name: Release notes from the top CHANGELOG entry
-        id: notes
-        run: |
-          $lines = Get-Content CHANGELOG
-          $entry = New-Object System.Collections.Generic.List[string]
-          $started = $false
-          foreach ($line in $lines) {
-            if ($line -match '^\d{4}-\d{2}-\d{2}') {
-              if ($started) { break }
-              $started = $true
-              continue
-            }
-            if ($started) {
-              # Tab-indented plain text into a nested Markdown list.
-              $entry.Add(($line -replace '^\t\t', '  ' -replace '^\t', ''))
-            }
-          }
-          $entry | Set-Content notes.md -Encoding utf8
-          $version = "${{ github.ref_name }}" -replace '^v', ''
-          "title=uZDL $version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
       - name: Keep the package as an artifact
         uses: actions/upload-artifact@v4
         with:
           name: uZDL-win64
           path: build/dist/*.zip
 
+  linux:
+    # Qt builds its Linux packages on Ubuntu 24.04, so an older runner cannot
+    # even link against them, and the AppImage inherits the same floor: it
+    # runs on distributions with glibc 2.39 or newer.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: linux_gcc_64
+          cache: true
+
+      # Pinned to dated releases rather than "continuous", so the packaging
+      # does not change under the workflow's feet. Both tools are AppImages
+      # themselves and find each other by sitting in the same directory.
+      - name: Install linuxdeploy
+        run: |
+          mkdir -p "$RUNNER_TEMP/linuxdeploy"
+          cd "$RUNNER_TEMP/linuxdeploy"
+          curl -fsSLO https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
+          curl -fsSLO https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" -DLINUXDEPLOY_EXECUTABLE="$RUNNER_TEMP/linuxdeploy/linuxdeploy-x86_64.AppImage"
+
+      - name: Build and package
+        run: cmake --build build --target dist
+
+      # A runner has no display, so a virtual one. A launcher that gets as
+      # far as its event loop is killed by the timeout, which exits 124;
+      # anything else is a crash or a refusal to start, most likely over a
+      # library the AppImage lacks. The Qt just installed is hidden from it,
+      # or the test would say nothing about what the AppImage carries.
+      - name: Check that the AppImage starts
+        run: |
+          command -v xvfb-run >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq xvfb; }
+          set +e
+          env -u LD_LIBRARY_PATH -u QT_PLUGIN_PATH -u QML2_IMPORT_PATH APPIMAGE_EXTRACT_AND_RUN=1 \
+            xvfb-run -a timeout 20 build/dist/uZDL-*.AppImage
+          status=$?
+          set -e
+          [ "$status" -eq 124 ] || { echo "uZDL exited with status $status instead of running"; exit 1; }
+
+      - name: Keep the package as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: uZDL-linux
+          path: build/dist/*.AppImage
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect the packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: uZDL-*
+          path: packages
+          merge-multiple: true
+
+      # The entry runs from the first dated line down to the next one.
+      # Tab-indented plain text into a nested Markdown list.
+      - name: Release notes from the top CHANGELOG entry
+        id: notes
+        run: |
+          awk '/^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/ { if (started) exit; started = 1; next }
+               started { sub(/^\t\t/, "  "); sub(/^\t/, ""); print }' CHANGELOG > notes.md
+          echo "title=uZDL ${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Publish the release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ steps.notes.outputs.title }}
           body_path: notes.md
-          files: build/dist/*.zip
+          files: packages/*

@@ -37,10 +37,14 @@ After compiling, see README.md for instructions on using uZDL.
 ----------
 The build is the same on every platform:
 
-	cmake -B build -DCMAKE_PREFIX_PATH=<path to your Qt 6 installation>
+	cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<path to your Qt 6 installation>
 	cmake --build build --config Release
 
 The resulting binary is 'uzdl' ('uzdl.exe' on Windows).
+
+CMAKE_BUILD_TYPE is what selects the optimised build with the Makefile and
+Ninja generators CMake uses on Linux; Visual Studio ignores it and goes by
+--config instead, so passing both keeps the commands the same everywhere.
 
 CMAKE_PREFIX_PATH can be omitted if Qt 6 is installed somewhere CMake already
 looks, which is usually the case for Qt installed through a Linux package
@@ -63,6 +67,15 @@ other way around.
 On other platforms file associations are unavailable and are compiled out via
 the _ZDL_NO_WFA define, which CMake sets for you.
 
+On Linux the build needs nothing beyond Qt, GCC or Clang, and the libraries
+Qt itself loads at run time. 'cmake --install build' puts the binary, the
+launcher entry from res/Linux/uzdl.desktop and the icon where a desktop
+looks for them. Mind the glibc floor of the Qt you link against: the
+packages from the Qt online installer are built on Ubuntu 24.04 and need its
+glibc 2.39 or newer, on the machine that builds and on every machine that
+runs the result. A Qt from the distribution's package manager has no such
+floor, but has to be 6.5 or newer.
+
 Whether the result is a standalone executable is a property of the Qt build
 you link against rather than of this project. Linking a statically built Qt
 produces a single-file executable with no extra flags here; the stock dynamic
@@ -70,14 +83,29 @@ Qt does not, and its libraries have to be deployed alongside the binary.
 
 5. Packaging a release
 ----------------------
-On Windows the build tree has a 'dist' target:
+On Windows and Linux the build tree has a 'dist' target:
 
 	cmake --build build --config Release --target dist
 
-It writes build/dist/uZDL-<version>-win64.zip: the executable, the Qt and
-MSVC runtime files it needs (collected with windeployqt), README.md,
-CHANGELOG, LICENSE and AUTHORS. It deliberately holds no uzdl_portable.ini:
-unpacking a newer version over an old folder must never replace the
+On Windows it writes build/dist/uZDL-<version>-win64.zip: the executable,
+the Qt and MSVC runtime files it needs (collected with windeployqt),
+README.md, CHANGELOG, LICENSE and AUTHORS.
+
+On Linux it writes build/dist/uZDL-<version>-x86_64.AppImage (the last part
+being the machine's architecture): a single file holding the executable, Qt
+and the same documents, which runs on any distribution whose glibc is as new
+as the Qt inside needs. Assembling it is linuxdeploy's job, and linuxdeploy
+is not part of Qt. Fetch linuxdeploy-x86_64.AppImage and
+linuxdeploy-plugin-qt-x86_64.AppImage from
+https://github.com/linuxdeploy/linuxdeploy/releases and
+https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases, make them
+executable, keep them in one directory, and tell CMake where the first one
+is:
+
+	cmake -B build -DCMAKE_BUILD_TYPE=Release -DLINUXDEPLOY_EXECUTABLE=<path to linuxdeploy-x86_64.AppImage>
+
+Neither package holds an uzdl_portable.ini: unpacking a newer version over
+an old folder, or replacing the AppImage, must never replace the
 configuration, so portable mode remains something the user opts into by
 creating that file. The version comes from the project() line in
 CMakeLists.txt; keep it in step with ZDL_VERSION_STRING in
@@ -85,11 +113,11 @@ include/zdlcommon.h, the four version fields in res/Win32/qzdl.rc (a UTF-16
 file, so grep will not find them) and the date line at the top of CHANGELOG.
 
 The GitHub Actions workflow in .github/workflows/release.yml runs the same
-target on a Windows runner. Pushing a tag named v<version> builds the
-package and publishes it as a GitHub release, with the top CHANGELOG entry
-as the release notes; running the workflow by hand just keeps the zip as a
-workflow artifact. So a release is: bump the version in the four places
-above, commit, then
+target on a Windows and on a Linux runner. Pushing a tag named v<version>
+builds both packages and publishes them together as one GitHub release,
+with the top CHANGELOG entry as the release notes; running the workflow by
+hand just builds and keeps the packages as workflow artifacts. So a release
+is: bump the version in the four places above, commit, then
 
 	git tag -a v1.0.0 -m "uZDL 1.0.0"
 	git push origin master v1.0.0

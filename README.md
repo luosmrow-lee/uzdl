@@ -9,19 +9,21 @@ A launcher for ZDoom based Doom source ports: pick a port and an IWAD, add PWADs
 - **idgames browser** - the whole /idgames archive, searchable offline from a mirror's own listing, with each entry's description. Installs straight into the PWAD folder, marks what is already installed, and opens the entry's Doomworld page for reviews and screenshots.
 - **Per-port parameters** - arguments a source port always gets, plus a *Run* button that starts a port on its own, which is how ports with a built-in updater get to update.
 - **Portable** - opt in with an empty `uzdl_portable.ini`; anything kept inside the uZDL folder is stored relative to it, so the folder moves or copies as one.
-- **Updates itself** - checks the GitHub releases on demand or once a day, shows the release notes, and on Windows downloads the new version, verifies it against the checksum GitHub publishes, installs it over the old files and restarts. Your configuration and files are never touched; *Skip this version* silences a release you do not want.
+- **Updates itself** - checks the GitHub releases on demand or once a day, shows the release notes, and on Windows downloads the new version, verifies it against the checksum GitHub publishes, installs it over the old files and restarts; on Linux it opens the release page for the new AppImage. Your configuration and files are never touched; *Skip this version* silences a release you do not want.
 - Themes (System, Light, Dark), multiplayer setup, demo playback and Windows file associations, as in ZDL.
 
 ## Download and install
 
-- Releases: https://github.com/luosmrow-lee/uzdl/releases - a zip with everything needed. Unpack it anywhere and run `uzdl.exe`; there is nothing to install.
+- Releases: https://github.com/luosmrow-lee/uzdl/releases - a zip for Windows and an AppImage for Linux, each with everything needed; there is nothing to install.
+- Windows: unpack the zip anywhere and run `uzdl.exe`.
+- Linux: make the AppImage executable (`chmod +x uZDL-*.AppImage`) and run it. It carries its own Qt and needs a distribution with glibc 2.39 or newer, which means Ubuntu 24.04, Debian 13, Fedora 40 or anything more recent.
 - Building from source: see [COMPILE](COMPILE).
 - uZDL is only a launcher: you need a source port and the game's IWAD separately.
 
 ## Portable mode
 
-- Create an empty file named `uzdl_portable.ini` beside `uzdl.exe` and it becomes the only configuration uZDL reads or writes. Without it the configuration is per-user, as in ZDL.
-- The release zip does not contain the file, so unpacking a newer version over an old folder never touches your configuration.
+- Create an empty file named `uzdl_portable.ini` beside `uzdl.exe`, or beside the AppImage on Linux, and it becomes the only configuration uZDL reads or writes. Without it the configuration is per-user, as in ZDL.
+- Neither release package contains the file, so unpacking a newer version over an old folder, or swapping in a newer AppImage, never touches your configuration.
 - A port, an IWAD, the PWAD folder, and the files in the launch list and in presets are stored relative to the uZDL folder whenever they sit inside it. For ports and IWADs the add and edit dialogs tick *Relative to the uZDL folder* by default and can keep the absolute path instead; `sourceports` and `iwads` folders are created for the purpose.
 - The folder has to be somewhere writable, since the configuration lives beside the executable. A folder under Program Files will not work without elevation.
 - File associations are the one feature that reaches outside the folder, into the Windows registry, and only when you press the button.

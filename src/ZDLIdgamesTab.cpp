@@ -320,7 +320,7 @@ QString ZDLIdgamesTab::indexCachePath()
 	QFileInfo conf(ZDLConfigurationManager::getConfigFileName());
 	QString dir=conf.absolutePath();
 	if (dir.isEmpty())
-		dir=QCoreApplication::applicationDirPath();
+		dir=ZDLPaths::appDir();
 	return QDir(dir).filePath("idgames.idx");
 }
 

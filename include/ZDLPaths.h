@@ -26,7 +26,8 @@
 //as a whole. Only files inside the folder qualify: a path that climbs out
 //through ".." would move with the folder in name only.
 namespace ZDLPaths {
-	//The folder the executable is in. In portable mode the configuration
+	//The folder the executable is in, or on Linux the folder the AppImage
+	//is in when uZDL runs from one. In portable mode the configuration
 	//lives there too.
 	QString appDir();
 

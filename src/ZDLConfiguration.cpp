@@ -19,16 +19,18 @@
  */
 
 #include "ZDLConfiguration.h"
+#include "ZDLPaths.h"
 
 ZDLConfiguration::ZDLConfiguration(){
-	//uZDL runs portable when uzdl_portable.ini sits next to the executable.
+	//uZDL runs portable when uzdl_portable.ini sits next to the executable,
+	//or next to the AppImage on Linux, which is what ZDLPaths::appDir means.
 	//That file is then the only configuration read or written, so moving the
 	//directory takes the whole setup with it. An empty file is enough to opt
 	//in; uZDL fills it in as it goes. The three scopes all name it because
 	//they are vestigial anyway - the per-scope accessors below were never
 	//implemented and all return failure - and keeping them distinct would
 	//only reintroduce a location outside the program directory.
-	QString portable_path=QDir(QCoreApplication::applicationDirPath()).filePath(ZDL_PORTABLE_INI);
+	QString portable_path=QDir(ZDLPaths::appDir()).filePath(ZDL_PORTABLE_INI);
 	portable=QFile::exists(portable_path);
 
 	if(portable){

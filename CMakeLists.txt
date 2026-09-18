@@ -165,27 +165,40 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wno-missing-field-initializers)
 endif()
 
+include(GNUInstallDirs)
+
 install(TARGETS uzdl
     BUNDLE  DESTINATION .
-    RUNTIME DESTINATION bin)
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-# The release package: `cmake --build build --config Release --target dist`
-# makes build/dist/uZDL-<version>-win64.zip holding the executable, the Qt
-# and MSVC runtimes it needs and the docs. Deliberately no uzdl_portable.ini:
+# What a Linux desktop needs to list uZDL in its menu and give the window
+# its icon. The AppImage below carries the same two files.
+if(UNIX AND NOT APPLE)
+    install(FILES res/Linux/uzdl.desktop DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)
+    install(FILES res/icon/uzdl.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/256x256/apps)
+endif()
+
+# The release package: `cmake --build build --config Release --target dist`.
+# On Windows it makes build/dist/uZDL-<version>-win64.zip holding the
+# executable, the Qt and MSVC runtimes it needs and the docs; on Linux
+# build/dist/uZDL-<version>-<arch>.AppImage, one file with Qt inside, put
+# together by linuxdeploy. Deliberately no uzdl_portable.ini in either:
 # unpacking a newer version over an old folder must never replace the
 # configuration, so portable mode stays something the user opts into.
+set(UZDL_DIST_ROOT "${CMAKE_BINARY_DIR}/dist")
+file(MAKE_DIRECTORY "${UZDL_DIST_ROOT}")
+
+get_target_property(_uzdl_qmake Qt6::qmake IMPORTED_LOCATION)
+get_filename_component(_uzdl_qt_bin "${_uzdl_qmake}" DIRECTORY)
+
 if(WIN32)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
     include(InstallRequiredSystemLibraries)
 
-    get_target_property(_uzdl_qmake Qt6::qmake IMPORTED_LOCATION)
-    get_filename_component(_uzdl_qt_bin "${_uzdl_qmake}" DIRECTORY)
     find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${_uzdl_qt_bin}")
 
     set(UZDL_DIST_NAME "uZDL-${PROJECT_VERSION}-win64")
-    set(UZDL_DIST_ROOT "${CMAKE_BINARY_DIR}/dist")
     set(UZDL_DIST_DIR "${UZDL_DIST_ROOT}/${UZDL_DIST_NAME}")
-    file(MAKE_DIRECTORY "${UZDL_DIST_ROOT}")
 
     # Without the MSVC runtime beside the executable, a machine that never
     # had Visual Studio or a redistributable installed fails to start it.
@@ -208,4 +221,48 @@ if(WIN32)
         COMMENT "Packaging ${UZDL_DIST_NAME}.zip"
         VERBATIM)
     add_dependencies(dist uzdl)
+elseif(UNIX AND NOT APPLE)
+    # linuxdeploy is not part of Qt. It and linuxdeploy-plugin-qt are the
+    # AppImages published at https://github.com/linuxdeploy; the plugin is
+    # found beside linuxdeploy or on PATH.
+    find_program(LINUXDEPLOY_EXECUTABLE
+        NAMES linuxdeploy linuxdeploy-${CMAKE_SYSTEM_PROCESSOR}.AppImage
+        DOC "linuxdeploy, which assembles the AppImage for the dist target")
+
+    set(UZDL_DIST_NAME "uZDL-${PROJECT_VERSION}-${CMAKE_SYSTEM_PROCESSOR}")
+    set(UZDL_APPDIR "${UZDL_DIST_ROOT}/AppDir")
+
+    if(LINUXDEPLOY_EXECUTABLE)
+        # linuxdeploy copies the executable, the launcher entry and the icon
+        # into the AppDir, adds Qt through its plugin and hands the result to
+        # appimagetool. QMAKE tells the plugin which Qt to take, and
+        # APPIMAGE_EXTRACT_AND_RUN lets the tools, AppImages themselves, run
+        # where FUSE is missing, as on a CI runner.
+        add_custom_target(dist
+            COMMAND ${CMAKE_COMMAND} -E rm -rf "${UZDL_APPDIR}" "${UZDL_DIST_ROOT}/${UZDL_DIST_NAME}.AppImage"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${UZDL_APPDIR}/usr/share/doc/uzdl"
+            COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/README.md" "${CMAKE_SOURCE_DIR}/CHANGELOG" "${CMAKE_SOURCE_DIR}/LICENSE" "${CMAKE_SOURCE_DIR}/AUTHORS" "${UZDL_APPDIR}/usr/share/doc/uzdl/"
+            COMMAND ${CMAKE_COMMAND} -E env
+                "QMAKE=${_uzdl_qmake}"
+                APPIMAGE_EXTRACT_AND_RUN=1
+                "LINUXDEPLOY_OUTPUT_VERSION=${PROJECT_VERSION}"
+                "OUTPUT=${UZDL_DIST_NAME}.AppImage"
+                "${LINUXDEPLOY_EXECUTABLE}"
+                    --appdir "${UZDL_APPDIR}"
+                    --executable "$<TARGET_FILE:uzdl>"
+                    --desktop-file "${CMAKE_SOURCE_DIR}/res/Linux/uzdl.desktop"
+                    --icon-file "${CMAKE_SOURCE_DIR}/res/icon/uzdl.png"
+                    --plugin qt
+                    --output appimage
+            WORKING_DIRECTORY "${UZDL_DIST_ROOT}"
+            COMMENT "Packaging ${UZDL_DIST_NAME}.AppImage"
+            VERBATIM)
+        add_dependencies(dist uzdl)
+    else()
+        add_custom_target(dist
+            COMMAND ${CMAKE_COMMAND} -E echo "linuxdeploy not found: configure with -DLINUXDEPLOY_EXECUTABLE=<path to linuxdeploy-${CMAKE_SYSTEM_PROCESSOR}.AppImage>, with linuxdeploy-plugin-qt beside it or on PATH"
+            COMMAND ${CMAKE_COMMAND} -E false
+            COMMENT "The dist target needs linuxdeploy"
+            VERBATIM)
+    endif()
 endif()
