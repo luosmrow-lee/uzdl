@@ -27,6 +27,15 @@ ZLibDir::ZLibDir(const QString &file):
 ZLibDir::~ZLibDir()
 {}
 
+//The maps folder of a directory resource, found without regard to case:
+//QDir::cd is case sensitive on Linux, where a mod is as likely to carry
+//MAPS as maps, while a name filter is not.
+static bool CdMaps(QDir &zdir)
+{
+	QStringList found=zdir.entryList(QStringList("maps"), QDir::Dirs|QDir::NoDotAndDotDot);
+	return !found.isEmpty()&&zdir.cd(found.first());
+}
+
 QStringList ZLibDir::getMapNames()
 {
 	QDir zdir(file);
@@ -39,7 +48,7 @@ QStringList ZLibDir::getMapNames()
 		}
 	}
 
-	if (zdir.cd("maps")) {	//CD is case insensitive
+	if (CdMaps(zdir)) {
 		foreach (const QFileInfo &zname, zdir.entryInfoList(QDir::Files|QDir::NoDotAndDotDot)) {
 			map_names<<zname.baseName().left(8).toUpper();
 		}
@@ -78,7 +87,7 @@ bool ZLibDir::isMAPXX()
 	QDir zdir(file);
 	bool is_mapxx=false;
 
-	if (zdir.cd("maps")) {	//CD is case insensitive
+	if (CdMaps(zdir)) {
 		foreach (const QString &zname, zdir.entryList(QDir::Files|QDir::NoDotAndDotDot)) {
 			if (!zname.compare("map01.wad", Qt::CaseInsensitive)||!zname.compare("map01.map", Qt::CaseInsensitive)) {
 				is_mapxx=true;

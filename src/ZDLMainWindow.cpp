@@ -629,21 +629,29 @@ QStringList ZDLMainWindow::getArgumentsList()
 
 #else
 
+//Shell-style expansion of a parameter string - quotes, ~, $VAR and globs -
+//as the original ZDL for Linux did. Command substitution is refused: the
+//string may have arrived in a .zdl file rather than been typed. Where
+//wordexp will not have the string at all, over a stray | or ( as much as
+//over a $(...) attempt, it is split on whitespace with quotes honoured
+//instead of being dropped, which is what Windows gets.
 QStringList ParseParams(const QString& params)
 {
 	QStringList plist;
-	
 	wordexp_t result;
 
-	switch (wordexp(qPrintable(params), &result, 0)) {
+	switch (wordexp(qPrintable(params), &result, WRDE_NOCMD)) {
 		case 0:
 			for (size_t i=0; i<result.we_wordc; i++)
-				plist<<result.we_wordv[i];
-		case WRDE_NOSPACE:	//If error is WRDE_NOSPACE - there is a possibilty that at least some part of wordexp_t.we_wordv was allocated
-			wordfree (&result);
+				plist<<QString::fromLocal8Bit(result.we_wordv[i]);
+			wordfree(&result);
+			return plist;
+		case WRDE_NOSPACE:	//Part of we_wordv may have been allocated
+			wordfree(&result);
+			break;
 	}
 
-	return plist;
+	return QProcess::splitCommand(params);
 }
 
 QStringList ZDLMainWindow::getArgumentsList()
@@ -689,10 +697,6 @@ QStringList ZDLMainWindow::getArgumentsList()
 		} else if (i_skill==6) {
 			args<<"-nomonsters";
 		}
-	}
-
-	if (zconf->hasValue("zdl.save", "skill")){
-		args<<"-skill"<<zconf->getValue("zdl.save", "skill");
 	}
 
 	if (zconf->hasValue("zdl.save", "warp")){

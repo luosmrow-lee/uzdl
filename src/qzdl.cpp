@@ -120,11 +120,10 @@ int main( int argc, char **argv ){
 	QApplication a( argc, argv );
 	qapp = &a;
 	ZDLConfigurationManager::setArgv(eatenArgs);
-	{
-		QFileInfo fullPath(argv[0]);
-		LOGDATA() << "Executable path: " << fullPath.canonicalFilePath() << Qt::endl;
-		ZDLConfigurationManager::setExec(fullPath.canonicalFilePath());
-	}
+	//Not argv[0], which on Linux is whatever the parent passed - "uzdl"
+	//alone when started from a menu or PATH - and so resolves nowhere.
+	LOGDATA() << "Executable path: " << QCoreApplication::applicationFilePath() << Qt::endl;
+	ZDLConfigurationManager::setExec(QCoreApplication::applicationFilePath());
 
 	LOGDATA() << "ZDL Version: " << ZDL_PRIVATE_VERSION_STRING << Qt::endl;
 	LOGDATA() << "Built on " << __DATE__ << " at " << __TIME__ <<Qt::endl;

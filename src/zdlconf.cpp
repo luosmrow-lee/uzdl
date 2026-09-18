@@ -328,7 +328,12 @@ void ZDLConf::parse(QString in, ZDLSection* current)
 	if (in.length() < 1){
 		return;
 	}
-	in=in.trimmed();;
+	in=in.trimmed();
+	//A line of nothing but whitespace has no first or last character to
+	//look at; it is not a section header and holds nothing to keep.
+	if (in.isEmpty()){
+		return;
+	}
 	LOGDATAO() << "Parse " << in << Qt::endl;
 	if (in[0] == '[' && in[in.length() - 1] == ']'){
 		in = in.mid(1, in.length()-2);

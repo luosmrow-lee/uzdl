@@ -430,12 +430,14 @@ void ZDLInterface::loadConfigFile(){
 				if(!fi.fileName().contains(".")){
 						fileName += ".ini";
 				}
-		delete zconf;
 		ZDLConf* tconf = new ZDLConf();
 		ZDLConfigurationManager::setConfigFileName(fileName);
 		tconf->readINI(fileName);
-		saveIniLastDir(fileName, zconf);
+		//Into the configuration just loaded, which is the one written out
+		//from now on; the old one was being written to after its delete.
+		saveIniLastDir(fileName, tconf);
 		ZDLConfigurationManager::setActiveConfiguration(tconf);
+		delete zconf;
 
 		mw->startRead();
 	}

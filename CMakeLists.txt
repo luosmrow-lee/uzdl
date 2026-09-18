@@ -188,8 +188,14 @@ endif()
 set(UZDL_DIST_ROOT "${CMAKE_BINARY_DIR}/dist")
 file(MAKE_DIRECTORY "${UZDL_DIST_ROOT}")
 
-get_target_property(_uzdl_qmake Qt6::qmake IMPORTED_LOCATION)
-get_filename_component(_uzdl_qt_bin "${_uzdl_qmake}" DIRECTORY)
+# Qt's own tools live beside qmake. A distribution's Qt may leave qmake
+# out, in which case the deploy tools have to be found on PATH.
+set(_uzdl_qmake)
+set(_uzdl_qt_bin)
+if(TARGET Qt6::qmake)
+    get_target_property(_uzdl_qmake Qt6::qmake IMPORTED_LOCATION)
+    get_filename_component(_uzdl_qt_bin "${_uzdl_qmake}" DIRECTORY)
+endif()
 
 if(WIN32)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
@@ -235,18 +241,23 @@ elseif(UNIX AND NOT APPLE)
     if(LINUXDEPLOY_EXECUTABLE)
         # linuxdeploy copies the executable, the launcher entry and the icon
         # into the AppDir, adds Qt through its plugin and hands the result to
-        # appimagetool. QMAKE tells the plugin which Qt to take, and
+        # appimagetool. QMAKE tells the plugin which Qt to take, when that is
+        # known here; otherwise it looks for qmake on PATH. And
         # APPIMAGE_EXTRACT_AND_RUN lets the tools, AppImages themselves, run
         # where FUSE is missing, as on a CI runner.
+        set(_uzdl_deploy_env
+            APPIMAGE_EXTRACT_AND_RUN=1
+            "LINUXDEPLOY_OUTPUT_VERSION=${PROJECT_VERSION}"
+            "OUTPUT=${UZDL_DIST_NAME}.AppImage")
+        if(_uzdl_qmake)
+            list(APPEND _uzdl_deploy_env "QMAKE=${_uzdl_qmake}")
+        endif()
+
         add_custom_target(dist
             COMMAND ${CMAKE_COMMAND} -E rm -rf "${UZDL_APPDIR}" "${UZDL_DIST_ROOT}/${UZDL_DIST_NAME}.AppImage"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${UZDL_APPDIR}/usr/share/doc/uzdl"
             COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/README.md" "${CMAKE_SOURCE_DIR}/CHANGELOG" "${CMAKE_SOURCE_DIR}/LICENSE" "${CMAKE_SOURCE_DIR}/AUTHORS" "${UZDL_APPDIR}/usr/share/doc/uzdl/"
-            COMMAND ${CMAKE_COMMAND} -E env
-                "QMAKE=${_uzdl_qmake}"
-                APPIMAGE_EXTRACT_AND_RUN=1
-                "LINUXDEPLOY_OUTPUT_VERSION=${PROJECT_VERSION}"
-                "OUTPUT=${UZDL_DIST_NAME}.AppImage"
+            COMMAND ${CMAKE_COMMAND} -E env ${_uzdl_deploy_env}
                 "${LINUXDEPLOY_EXECUTABLE}"
                     --appdir "${UZDL_APPDIR}"
                     --executable "$<TARGET_FILE:uzdl>"
