@@ -1,3 +1,24 @@
+2026-09-20  luosmrow-lee <luosmrowlee@tuta.io>
+
+	* Release 1.0.2
+	* Added:
+		- Linux: the release carries an AppImage, built and published by the same workflow as the Windows zip; it brings its own Qt and runs on distributions with glibc 2.39 or newer
+		- Linux: the AppImage updates itself the way the Windows package does; the download is checked against the digest GitHub publishes and renamed over the old file
+		- Linux: the .zdl file type is registered with the desktop, and portable mode works with uzdl_portable.ini beside the AppImage
+		- --preset "Name" on the command line loads that preset and launches the game; the Shortcut button on the presets pane writes a desktop shortcut that does so, a .lnk on Windows or a .desktop entry on Linux, which also serves as a Steam entry
+		- A preset can carry its own save folder and config file, passed to the port as -savedir and -config, so a mod's saves and settings stay apart from the vanilla game's
+		- Compatibility mode selector beside Skill, passed as +compatmode, with the modes GZDoom's own menu offers
+		- Fast monsters and Respawning monsters checkboxes, passed as -fast and -respawn
+	* Changed:
+		- Exporting a preset as .zdl carries its port, IWAD, save folder and config file, which import already read back
+		- The executable's own path comes from Qt rather than argv[0], which on Linux can be a bare name that resolves nowhere
+	* Fixed:
+		- Linux: every launch passed -skill twice, and No monsters became -nomonsters followed by -skill 6
+		- Linux: parameter strings went through the shell's command substitution, which a downloaded .zdl could have abused, and a string the shell parser refused was dropped instead of passed on
+		- Linux: a directory resource's maps folder was only found when spelled in lowercase
+		- Load .ini wrote to the configuration it had just deleted
+		- A blank line in an INI file indexed into an empty string, which aborted Debug builds on their second start
+
 2026-09-11  luosmrow-lee <luosmrowlee@tuta.io>
 
 	* Release 1.0.1

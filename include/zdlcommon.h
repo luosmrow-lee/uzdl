@@ -27,7 +27,7 @@
 //The name shown to the user. Distinct from the zdl.* config keys and the
 //.zdl file extension, which are data and must keep their spelling.
 #define ZDL_APP_NAME "uZDL"
-#define ZDL_VERSION_STRING "1.0.1"
+#define ZDL_VERSION_STRING "1.0.2"
 #define ZDL_PORTABLE_INI "uzdl_portable.ini"
 //GitHub project the update check asks for releases, unless the
 //configuration names another as updaterepo under [zdl.general].
@@ -35,7 +35,7 @@
 #define ZDL_DEV_BUILD 0
 //Shown in the About box. uZDL numbers itself from 1.0.0 rather than
 //continuing ZDL 3-1.2, which is where it was forked from.
-#define ZDL_PRIVATE_VERSION_STRING "1.0.1 (Qt 6, forked from ZDL 3-1.2)"
+#define ZDL_PRIVATE_VERSION_STRING "1.0.2 (Qt 6, forked from ZDL 3-1.2)"
 
 #ifdef Q_OS_WIN
 #define QFD_FILTER_DELIM    ";"
