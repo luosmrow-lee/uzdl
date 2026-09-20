@@ -51,23 +51,34 @@ bool ZDLSelfUpdate::canUpdate(const ZDLReleaseInfo &release, QString *why)
 {
 	QString reason;
 
-#if !defined(Q_OS_WIN)
-	Q_UNUSED(release);
-	reason="Installing updates in place is only done for the Windows package.";
+#if defined(Q_OS_WIN)
+	QString package="Windows package";
+#elif defined(Q_OS_LINUX)
+	QString package="Linux AppImage";
+	if (ZDLPaths::appImage().isEmpty())
+		reason="Only the AppImage updates itself, and this uZDL was not started from one.";
 #else
-	if (release.assetName.isEmpty()) {
-		reason="The release has no Windows package attached.";
-	} else {
-		//A probe rather than a permission check: what matters is whether a
-		//file can actually be made here, whatever the ACLs claim.
-		QDir app(ZDLPaths::appDir());
-		QFile probe(app.filePath(QString(STAGE_DIR)+"/.probe"));
-		if (!app.mkpath(STAGE_DIR)||!probe.open(QIODevice::WriteOnly|QIODevice::Truncate)) {
-			reason="The program folder cannot be written to, so the update has to be unpacked by hand.";
+	Q_UNUSED(release);
+	reason="Installing updates in place is only done for the Windows package and the Linux AppImage.";
+#endif
+
+#if defined(Q_OS_WIN)||defined(Q_OS_LINUX)
+	if (reason.isEmpty()) {
+		if (release.assetName.isEmpty()) {
+			reason="The release has no "+package+" attached.";
 		} else {
-			probe.close();
-			probe.remove();
-			app.rmdir(STAGE_DIR);
+			//A probe rather than a permission check: what matters is whether a
+			//file can actually be made here, whatever the ACLs claim. Here is
+			//the program folder, or on Linux the one holding the AppImage.
+			QDir app(ZDLPaths::appDir());
+			QFile probe(app.filePath(QString(STAGE_DIR)+"/.probe"));
+			if (!app.mkpath(STAGE_DIR)||!probe.open(QIODevice::WriteOnly|QIODevice::Truncate)) {
+				reason="The program folder cannot be written to, so the update has to be unpacked by hand.";
+			} else {
+				probe.close();
+				probe.remove();
+				app.rmdir(STAGE_DIR);
+			}
 		}
 	}
 #endif
@@ -252,7 +263,12 @@ void ZDLSelfUpdate::downloadFinished()
 	}
 
 	QString error;
-	if (!verify(error)||!extract(error)||!install(error)) {
+#if defined(Q_OS_LINUX)
+	bool installed=verify(error)&&installAppImage(error);
+#else
+	bool installed=verify(error)&&extract(error)&&install(error);
+#endif
+	if (!installed) {
 		fail(error);
 		return;
 	}
@@ -454,6 +470,40 @@ bool ZDLSelfUpdate::install(QString &error)
 	return true;
 }
 
+//The Linux counterpart of extract and install in one: the download is the
+//whole program, so it is marked executable and renamed over the AppImage
+//this one runs from. The running file keeps its inode until exit, so the
+//swap pulls nothing from under it, and the old copy needs no .old and no
+//manifest.
+bool ZDLSelfUpdate::installAppImage(QString &error)
+{
+	QString target=ZDLPaths::appImage();
+	QFile fresh(download.fileName());
+
+	if (!fresh.setPermissions(fresh.permissions()|QFileDevice::ExeOwner|QFileDevice::ExeGroup|QFileDevice::ExeOther)) {
+		error="Could not mark the new AppImage executable";
+		return false;
+	}
+
+	//QFile::rename will not replace a file that exists, so the current one
+	//steps aside first and comes back if the swap fails.
+	QString old=target+".old";
+	QFile::remove(old);
+	if (!QFile::rename(target, old)) {
+		error="Could not step the current AppImage aside; its folder may not be writable";
+		return false;
+	}
+	if (!QFile::rename(download.fileName(), target)) {
+		QFile::rename(old, target);
+		error="Could not move the new AppImage into place";
+		return false;
+	}
+	QFile::remove(old);
+
+	QDir(stageDir).removeRecursively();
+	return true;
+}
+
 //Puts every swapped file back, newest first, and withdraws the manifest so
 //the next start does not report an update that never happened.
 void ZDLSelfUpdate::rollback()
@@ -479,7 +529,11 @@ void ZDLSelfUpdate::relaunch()
 	if (mw)
 		mw->writeConfig();
 
+#if defined(Q_OS_LINUX)
+	QString exe=ZDLPaths::appImage();
+#else
 	QString exe=QDir(ZDLPaths::appDir()).filePath("uzdl.exe");
+#endif
 	if (!QProcess::startDetached(exe, QStringList(), ZDLPaths::appDir())) {
 		if (progress) {
 			progress->deleteLater();

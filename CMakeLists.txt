@@ -58,6 +58,7 @@ set(UZDL_HEADERS
     include/ZDLSelfUpdate.h
     include/ZDLSettingsPane.h
     include/ZDLSettingsTab.h
+    include/ZDLShortcut.h
     include/ZDLSourcePortList.h
     include/ZDLUpdateCheck.h
     include/ZDLWidget.h
@@ -99,6 +100,7 @@ set(UZDL_SOURCES
     src/ZDLSelfUpdate.cpp
     src/ZDLSettingsPane.cpp
     src/ZDLSettingsTab.cpp
+    src/ZDLShortcut.cpp
     src/ZDLSourcePortList.cpp
     src/ZDLUpdateCheck.cpp
     src/ZDLWidget.cpp
@@ -176,6 +178,9 @@ install(TARGETS uzdl
 if(UNIX AND NOT APPLE)
     install(FILES res/Linux/uzdl.desktop DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)
     install(FILES res/icon/uzdl.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/256x256/apps)
+    # What a .zdl file is, so a file manager can hand one to uZDL. A
+    # package's post-install step runs update-mime-database for it.
+    install(FILES res/Linux/uzdl.xml DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/mime/packages)
 endif()
 
 # The release package: `cmake --build build --config Release --target dist`.
@@ -255,8 +260,9 @@ elseif(UNIX AND NOT APPLE)
 
         add_custom_target(dist
             COMMAND ${CMAKE_COMMAND} -E rm -rf "${UZDL_APPDIR}" "${UZDL_DIST_ROOT}/${UZDL_DIST_NAME}.AppImage"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${UZDL_APPDIR}/usr/share/doc/uzdl"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${UZDL_APPDIR}/usr/share/doc/uzdl" "${UZDL_APPDIR}/usr/share/mime/packages"
             COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/README.md" "${CMAKE_SOURCE_DIR}/CHANGELOG" "${CMAKE_SOURCE_DIR}/LICENSE" "${CMAKE_SOURCE_DIR}/AUTHORS" "${UZDL_APPDIR}/usr/share/doc/uzdl/"
+            COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/res/Linux/uzdl.xml" "${UZDL_APPDIR}/usr/share/mime/packages/"
             COMMAND ${CMAKE_COMMAND} -E env ${_uzdl_deploy_env}
                 "${LINUXDEPLOY_EXECUTABLE}"
                     --appdir "${UZDL_APPDIR}"

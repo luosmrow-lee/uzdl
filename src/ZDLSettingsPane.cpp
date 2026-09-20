@@ -103,6 +103,37 @@ ZDLSettingsPane::ZDLSettingsPane(QWidget *parent):ZDLWidget(parent){
 	diffList->addItem("No monsters");
 	skillBox->addWidget(new QLabel("Skill",this));
 	skillBox->addWidget(diffList);
+
+	//GZDoom's compatibility presets, in the order its own menu lists them,
+	//each carrying the number +compatmode takes. Default passes nothing, so
+	//the port keeps whatever it was last set to.
+	QVBoxLayout *compatBox = new QVBoxLayout();
+	box2->addLayout(compatBox);
+	compatList = new QComboBox(this);
+	compatList->addItem("(Default)", -1);
+	compatList->addItem("Doom", 1);
+	compatList->addItem("Doom (strict)", 2);
+	compatList->addItem("Boom", 3);
+	compatList->addItem("Boom (strict)", 6);
+	compatList->addItem("MBF", 5);
+	compatList->addItem("MBF (strict)", 7);
+	compatList->addItem("MBF 21", 8);
+	compatList->addItem("MBF 21 (strict)", 9);
+	compatList->addItem("ZDoom 2.0.63", 4);
+	compatList->setToolTip("Passed as +compatmode: the same choice as GZDoom's compatibility mode menu");
+	compatBox->addWidget(new QLabel("Compatibility",this));
+	compatBox->addWidget(compatList);
+	compatBox->setSpacing(2);
+
+	QHBoxLayout *monsterRow = new QHBoxLayout();
+	fastCheck = new QCheckBox("Fast monsters", this);
+	fastCheck->setToolTip("-fast: monsters move and attack as on Nightmare");
+	respawnCheck = new QCheckBox("Respawning monsters", this);
+	respawnCheck->setToolTip("-respawn: killed monsters come back, as on Nightmare");
+	monsterRow->addWidget(fastCheck);
+	monsterRow->addWidget(respawnCheck);
+	monsterRow->addStretch();
+	box->addLayout(monsterRow);
 	LOGDATAO() << "Done" << Qt::endl;
 }
 
@@ -315,6 +346,24 @@ void ZDLSettingsPane::rebuild(){
 		zconf->deleteValue("zdl.save", "warp");
 	}
 
+	if (compatList->currentIndex() > 0){
+		zconf->setValue("zdl.save", "compatmode", compatList->currentData().toInt());
+	}else{
+		zconf->deleteValue("zdl.save", "compatmode");
+	}
+
+	if (fastCheck->isChecked()){
+		zconf->setValue("zdl.save", "fast", "1");
+	}else{
+		zconf->deleteValue("zdl.save", "fast");
+	}
+
+	if (respawnCheck->isChecked()){
+		zconf->setValue("zdl.save", "respawn", "1");
+	}else{
+		zconf->deleteValue("zdl.save", "respawn");
+	}
+
 	bool set=false;
 	ZDLSection *section = zconf->getSection("zdl.ports");
 	if (section){
@@ -398,6 +447,11 @@ void ZDLSettingsPane::newConfig(){
 	}else{
 		warpCombo->clearEditText();
 	}
+
+	int compat = zconf->hasValue("zdl.save", "compatmode") ? compatList->findData(zconf->getValue("zdl.save", "compatmode").toInt()) : -1;
+	compatList->setCurrentIndex(compat > 0 ? compat : 0);
+	fastCheck->setChecked(zconf->hasValue("zdl.save", "fast") && zconf->getValue("zdl.save", "fast") == "1");
+	respawnCheck->setChecked(zconf->hasValue("zdl.save", "respawn") && zconf->getValue("zdl.save", "respawn") == "1");
 
 	sourceList->clear();
 	ZDLSection *section = zconf->getSection("zdl.ports");

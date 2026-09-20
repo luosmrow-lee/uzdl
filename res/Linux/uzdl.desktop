@@ -7,5 +7,6 @@ Exec=uzdl %F
 Icon=uzdl
 Terminal=false
 Categories=Game;
+MimeType=application/x-zdl;
 Keywords=Doom;ZDoom;GZDoom;WAD;launcher;
 StartupWMClass=uzdl

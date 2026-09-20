@@ -38,6 +38,11 @@ class QNetworkReply;
 //and the new one deletes the .old files once this one is gone. Nothing
 //outside the package - the configuration, ports, IWADs, PWADs - is ever
 //touched, and a swap that fails part way is undone before it is reported.
+//
+//On Linux the package is the AppImage, one file, and Linux lets a running
+//file be replaced outright: the download is renamed over it and there is
+//nothing to clear away afterwards. Only an uZDL started from an AppImage
+//does this; one built from source is left to whoever installed it.
 class ZDLSelfUpdate: public QObject {
 	Q_OBJECT
 	public:
@@ -71,6 +76,7 @@ class ZDLSelfUpdate: public QObject {
 		bool verify(QString &error);
 		bool extract(QString &error);
 		bool install(QString &error);
+		bool installAppImage(QString &error);
 		void rollback();
 		void relaunch();
 

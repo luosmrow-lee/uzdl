@@ -31,6 +31,14 @@ namespace ZDLPaths {
 	//lives there too.
 	QString appDir();
 
+	//The AppImage uZDL was started from, on Linux; an empty string when it
+	//runs from a plain executable.
+	QString appImage();
+
+	//What a shortcut has to start to get this very uZDL: the AppImage when
+	//running from one, the executable otherwise.
+	QString launcher();
+
 	//The folders meant for source ports and IWADs kept with uZDL; portable
 	//mode creates them at startup. Suggestions only: any file under appDir
 	//can be stored relative.

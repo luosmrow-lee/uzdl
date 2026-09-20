@@ -73,7 +73,7 @@ void ZDLLaunchFiles::write(ZDLConf *zconf, const QString &section, const QList<Z
 	}
 }
 
-void ZDLLaunchFiles::sendToLaunch(const QList<ZDLFileEntry> &entries, bool replace, const QString &port, const QString &iwad)
+void ZDLLaunchFiles::sendToLaunch(const QList<ZDLFileEntry> &entries, bool replace, const QString &port, const QString &iwad, const QString &savedir, const QString &config)
 {
 	if (entries.isEmpty()&&!replace&&port.isEmpty()&&iwad.isEmpty())
 		return;
@@ -111,7 +111,46 @@ void ZDLLaunchFiles::sendToLaunch(const QList<ZDLFileEntry> &entries, bool repla
 	if (!iwad.isEmpty())
 		zconf->setValue(LAUNCH_SECTION, "iwad", iwad);
 
+	if (replace) {
+		if (savedir.isEmpty())
+			zconf->deleteValue(LAUNCH_SECTION, "savedir");
+		else
+			zconf->setValue(LAUNCH_SECTION, "savedir", savedir);
+		if (config.isEmpty())
+			zconf->deleteValue(LAUNCH_SECTION, "config");
+		else
+			zconf->setValue(LAUNCH_SECTION, "config", config);
+	}
+
 	mw->startRead();
+}
+
+static QString SectionValue(ZDLConf *zconf, const QString &section, const char *key)
+{
+	return zconf->hasValue(section, key)?zconf->getValue(section, key):QString();
+}
+
+void ZDLLaunchFiles::loadPreset(ZDLConf *zconf, const QString &section)
+{
+	if (!zconf||section.isEmpty())
+		return;
+
+	sendToLaunch(read(zconf, section), true,
+		SectionValue(zconf, section, "port"),
+		SectionValue(zconf, section, "iwad"),
+		SectionValue(zconf, section, "savedir"),
+		SectionValue(zconf, section, "config"));
+}
+
+QString ZDLLaunchFiles::presetSection(ZDLConf *zconf, const QString &name)
+{
+	foreach (const QString &section, presetSections(zconf)) {
+		QString called=zconf->hasValue(section, "name")?zconf->getValue(section, "name"):section;
+		if (!called.compare(name, Qt::CaseInsensitive))
+			return section;
+	}
+
+	return QString();
 }
 
 QStringList ZDLLaunchFiles::presetSections(ZDLConf *zconf)

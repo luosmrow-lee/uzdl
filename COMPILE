@@ -69,8 +69,9 @@ the _ZDL_NO_WFA define, which CMake sets for you.
 
 On Linux the build needs nothing beyond Qt, GCC or Clang, and the libraries
 Qt itself loads at run time. 'cmake --install build' puts the binary, the
-launcher entry from res/Linux/uzdl.desktop and the icon where a desktop
-looks for them. Mind the glibc floor of the Qt you link against: the
+launcher entry from res/Linux/uzdl.desktop, the icon and the .zdl file type
+from res/Linux/uzdl.xml where a desktop looks for them; a package should
+run update-mime-database after installing the last of those. Mind the glibc floor of the Qt you link against: the
 packages from the Qt online installer are built on Ubuntu 24.04 and need its
 glibc 2.39 or newer, on the machine that builds and on every machine that
 runs the result. A Qt from the distribution's package manager has no such

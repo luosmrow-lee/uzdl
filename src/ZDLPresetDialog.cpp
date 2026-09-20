@@ -19,6 +19,7 @@
 #include <algorithm>
 #include "ZDLPresetDialog.h"
 #include "ZDLPaths.h"
+#include "ZDLShortcut.h"
 #include "ZDLConfigurationManager.h"
 #include "ZDLMainWindow.h"
 
@@ -99,6 +100,28 @@ ZDLPresetDialog::ZDLPresetDialog(QWidget *parent, const QString &name, const QSt
 	portRow->addStretch();
 	column->addLayout(portRow);
 
+	//A save folder and a settings file of the preset's own, so a mod's
+	//saves and options never mix with the vanilla game's. Both go to the
+	//port as they are, -savedir and -config, which every ZDoom descendant
+	//takes. Blank means the port's usual places.
+	QHBoxLayout *keepRow=new QHBoxLayout();
+	keepRow->addWidget(new QLabel("Save folder", this));
+	saveDirEdit=new QLineEdit(this);
+	saveDirEdit->setToolTip("Passed to the port as -savedir: where this preset's savegames go. Blank for the port's own folder.");
+	keepRow->addWidget(saveDirEdit, 1);
+	QPushButton *btnSaveDir=new QPushButton("Browse...", this);
+	keepRow->addWidget(btnSaveDir);
+	keepRow->addWidget(new QLabel("Config file", this));
+	configEdit=new QLineEdit(this);
+	configEdit->setToolTip("Passed to the port as -config: the settings file it reads and writes for this preset. Blank for the port's own.");
+	keepRow->addWidget(configEdit, 1);
+	QPushButton *btnConfig=new QPushButton("Browse...", this);
+	keepRow->addWidget(btnConfig);
+	QPushButton *btnOwn=new QPushButton("Own folder", this);
+	btnOwn->setToolTip("Fill both in with a folder named after the preset: beside uZDL in portable mode, in your profile otherwise");
+	keepRow->addWidget(btnOwn);
+	column->addLayout(keepRow);
+
 	//The library sits beside the preset so files can be picked without
 	//going out to the launch tab and back. It is the same pane the launch
 	//tab uses, told to hand its choice here rather than to the launch list.
@@ -155,6 +178,9 @@ ZDLPresetDialog::ZDLPresetDialog(QWidget *parent, const QString &name, const QSt
 	QObject::connect(btnAdd, SIGNAL(clicked()), this, SLOT(addFiles()));
 	QObject::connect(btnFolder, SIGNAL(clicked()), this, SLOT(addFolder()));
 	QObject::connect(btnTake, SIGNAL(clicked()), this, SLOT(takeFromLaunch()));
+	QObject::connect(btnSaveDir, SIGNAL(clicked()), this, SLOT(browseSaveDir()));
+	QObject::connect(btnConfig, SIGNAL(clicked()), this, SLOT(browseConfig()));
+	QObject::connect(btnOwn, SIGNAL(clicked()), this, SLOT(ownFolder()));
 	QObject::connect(btnRemove, SIGNAL(clicked()), this, SLOT(removeSelected()));
 	QObject::connect(btnExclude, SIGNAL(clicked()), this, SLOT(toggleExcluded()));
 	QObject::connect(btnUp, SIGNAL(clicked()), this, SLOT(moveUp()));
@@ -196,6 +222,60 @@ QString ZDLPresetDialog::presetPort()
 QString ZDLPresetDialog::presetIwad()
 {
 	return iwadBox->currentIndex()<=0?QString():iwadBox->currentText();
+}
+
+//Stored relative to the uZDL folder when inside it, like every other path.
+QString ZDLPresetDialog::presetSaveDir()
+{
+	QString dir=saveDirEdit->text().trimmed();
+	return dir.isEmpty()?QString():ZDLPaths::preferRelative(QFD_QT_SEP(dir));
+}
+
+QString ZDLPresetDialog::presetConfig()
+{
+	QString file=configEdit->text().trimmed();
+	return file.isEmpty()?QString():ZDLPaths::preferRelative(QFD_QT_SEP(file));
+}
+
+void ZDLPresetDialog::setKeepApart(const QString &savedir, const QString &config)
+{
+	saveDirEdit->setText(savedir);
+	configEdit->setText(config);
+}
+
+void ZDLPresetDialog::browseSaveDir()
+{
+	QString start=saveDirEdit->text().isEmpty()?ZDLPaths::appDir():ZDLPaths::resolve(saveDirEdit->text());
+	QString chosen=QFileDialog::getExistingDirectory(this, "Save folder for this preset", start, QFileDialog::ShowDirsOnly);
+	if (!chosen.isEmpty())
+		saveDirEdit->setText(ZDLPaths::preferRelative(QFD_QT_SEP(chosen)));
+}
+
+//The file need not exist yet: the port makes it on its first run.
+void ZDLPresetDialog::browseConfig()
+{
+	QString start=configEdit->text().isEmpty()?ZDLPaths::appDir():ZDLPaths::resolve(configEdit->text());
+	QString chosen=QFileDialog::getSaveFileName(this, "Config file for this preset", start, "Config files (*.ini);;All files (" QFD_FILTER_ALL ")", NULL, QFileDialog::DontConfirmOverwrite);
+	if (!chosen.isEmpty())
+		configEdit->setText(ZDLPaths::preferRelative(QFD_QT_SEP(chosen)));
+}
+
+//One folder for both, named after the preset: beside uZDL in portable mode,
+//where it travels with everything else, and in the user's profile otherwise.
+void ZDLPresetDialog::ownFolder()
+{
+	if (presetName().isEmpty()) {
+		QMessageBox::information(this, ZDL_APP_NAME, "Give the preset a name first; the folder is named after it.");
+		nameEdit->setFocus();
+		return;
+	}
+
+	ZDLConfiguration *conf=ZDLConfigurationManager::getConfiguration();
+	QString base=conf&&conf->isPortable()?ZDLPaths::appDir():QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+	QString folder=QDir(base).filePath("saves/"+ZDLShortcut::safeFileName(presetName()));
+
+	saveDirEdit->setText(ZDLPaths::preferRelative(folder));
+	configEdit->setText(ZDLPaths::preferRelative(folder+"/config.ini"));
 }
 
 QString ZDLPresetDialog::presetName()

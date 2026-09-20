@@ -19,6 +19,7 @@
 #include "ZDLPresetList.h"
 #include "ZDLPresetDialog.h"
 #include "ZDLLaunchFiles.h"
+#include "ZDLShortcut.h"
 #include "ZDLConfigurationManager.h"
 #include "ZDLMainWindow.h"
 
@@ -26,6 +27,31 @@ extern ZDLMainWindow *mw;
 
 //Section the highlighted item stands for, e.g. "zdl.mix2".
 #define PRESET_SECTION_ROLE (Qt::UserRole+1)
+
+static QString Stored(ZDLConf *zconf, const QString &section, const char *key)
+{
+	return zconf->hasValue(section, key)?zconf->getValue(section, key):QString();
+}
+
+//Port, IWAD, save folder and config file as the editor left them: written
+//when set, dropped when blank. Blank means "leave the launch tab's own
+//alone" for the first two and "the port's usual place" for the other two.
+static void StoreChoices(ZDLConf *zconf, const QString &section, ZDLPresetDialog &dialog)
+{
+	struct { const char *key; QString value; } choices[]={
+		{"port", dialog.presetPort()},
+		{"iwad", dialog.presetIwad()},
+		{"savedir", dialog.presetSaveDir()},
+		{"config", dialog.presetConfig()}
+	};
+
+	for (size_t i=0; i<sizeof(choices)/sizeof(choices[0]); i++) {
+		if (choices[i].value.isEmpty())
+			zconf->deleteValue(section, choices[i].key);
+		else
+			zconf->setValue(section, choices[i].key, choices[i].value);
+	}
+}
 
 ZDLPresetList::ZDLPresetList(QWidget *parent): ZDLWidget(parent)
 {
@@ -62,12 +88,20 @@ ZDLPresetList::ZDLPresetList(QWidget *parent): ZDLWidget(parent)
 	QPushButton *btnImport=new QPushButton("Import", this);
 	btnImport->setToolTip("Make a preset from a .zdl file");
 
+	//A desktop shortcut, or a Steam entry, that starts straight into the
+	//preset. Only where a shortcut format is implemented.
+	QPushButton *btnShortcut=ZDLShortcut::supported()?new QPushButton("Shortcut", this):NULL;
+	if (btnShortcut)
+		btnShortcut->setToolTip("Make a desktop shortcut that starts the game with this preset");
+
 	QPushButton *btnAppend=new QPushButton("Add \342\206\222", this);
 	btnAppend->setToolTip("Append this preset to the external file list, skipping files already there");
 
 	buttonRow->addWidget(btnEdit);
 	buttonRow->addWidget(btnDelete);
 	buttonRow->addWidget(btnImport);
+	if (btnShortcut)
+		buttonRow->addWidget(btnShortcut);
 	buttonRow->addStretch();
 	buttonRow->addWidget(btnLoad);
 	buttonRow->addWidget(btnAppend);
@@ -81,6 +115,8 @@ ZDLPresetList::ZDLPresetList(QWidget *parent): ZDLWidget(parent)
 	QObject::connect(btnEdit, SIGNAL(clicked()), this, SLOT(editPreset()));
 	QObject::connect(btnDelete, SIGNAL(clicked()), this, SLOT(deletePreset()));
 	QObject::connect(btnImport, SIGNAL(clicked()), this, SLOT(importPreset()));
+	if (btnShortcut)
+		QObject::connect(btnShortcut, SIGNAL(clicked()), this, SLOT(shortcutPreset()));
 	QObject::connect(btnLoad, SIGNAL(clicked()), this, SLOT(loadPreset()));
 	QObject::connect(btnLaunch, SIGNAL(clicked()), this, SLOT(launchPreset()));
 	QObject::connect(btnAppend, SIGNAL(clicked()), this, SLOT(appendPreset()));
@@ -166,19 +202,13 @@ void ZDLPresetList::editPreset()
 	}
 
 	ZDLPresetDialog dialog(this, currentName(), currentPort(), currentIwad(), ZDLLaunchFiles::read(zconf, section));
+	dialog.setKeepApart(Stored(zconf, section, "savedir"), Stored(zconf, section, "config"));
 	//The dialog will not close without a name, so there is nothing to check.
 	if (dialog.exec()!=QDialog::Accepted)
 		return;
 
 	zconf->setValue(section, "name", dialog.presetName());
-	if (dialog.presetPort().isEmpty())
-		zconf->deleteValue(section, "port");
-	else
-		zconf->setValue(section, "port", dialog.presetPort());
-	if (dialog.presetIwad().isEmpty())
-		zconf->deleteValue(section, "iwad");
-	else
-		zconf->setValue(section, "iwad", dialog.presetIwad());
+	StoreChoices(zconf, section, dialog);
 	ZDLLaunchFiles::write(zconf, section, dialog.presetEntries());
 
 	newConfig();
@@ -196,7 +226,10 @@ void ZDLPresetList::send(bool replace)
 
 	//Appending is about files only: it must not silently change the port
 	//under a configuration the user assembled by hand.
-	ZDLLaunchFiles::sendToLaunch(ZDLLaunchFiles::read(zconf, section), replace, replace?currentPort():QString(), replace?currentIwad():QString());
+	if (replace)
+		ZDLLaunchFiles::loadPreset(zconf, section);
+	else
+		ZDLLaunchFiles::sendToLaunch(ZDLLaunchFiles::read(zconf, section), false);
 }
 
 void ZDLPresetList::loadPreset()
@@ -264,9 +297,16 @@ void ZDLPresetList::exportPreset()
 		fileName+=".zdl";
 
 	//A preset is stored in the same layout as zdl.save, so exporting is just
-	//a matter of writing those entries out under that section name.
+	//a matter of writing those entries out under that section name. The
+	//port, IWAD, save folder and config file it names go along, since import
+	//reads them back and a .zdl given on the command line honours them.
 	ZDLConf out;
 	ZDLLaunchFiles::write(&out, ZDLLaunchFiles::LAUNCH_SECTION, ZDLLaunchFiles::read(zconf, section));
+	static const char *carried[]={"port", "iwad", "savedir", "config"};
+	for (size_t i=0; i<sizeof(carried)/sizeof(carried[0]); i++) {
+		if (zconf->hasValue(section, carried[i]))
+			out.setValue(ZDLLaunchFiles::LAUNCH_SECTION, carried[i], zconf->getValue(section, carried[i]));
+	}
 
 	saveZdlLastDir(fileName);
 
@@ -311,18 +351,43 @@ void ZDLPresetList::importPreset()
 	//Opened in the editor rather than stored blind, so the name - the file's
 	//own by default - and the contents can be adjusted first.
 	ZDLPresetDialog dialog(this, QFileInfo(fileName).completeBaseName(), port, iwad, entries);
+	dialog.setKeepApart(Stored(&zdl, ZDLLaunchFiles::LAUNCH_SECTION, "savedir"), Stored(&zdl, ZDLLaunchFiles::LAUNCH_SECTION, "config"));
 	if (dialog.exec()!=QDialog::Accepted)
 		return;
 
 	QString section=ZDLLaunchFiles::newPresetSection(zconf);
 	zconf->setValue(section, "name", dialog.presetName());
-	if (!dialog.presetPort().isEmpty())
-		zconf->setValue(section, "port", dialog.presetPort());
-	if (!dialog.presetIwad().isEmpty())
-		zconf->setValue(section, "iwad", dialog.presetIwad());
+	StoreChoices(zconf, section, dialog);
 	ZDLLaunchFiles::write(zconf, section, dialog.presetEntries());
 
 	newConfig();
+}
+
+//A shortcut file that starts uZDL with --preset and this preset's name, put
+//wherever the user says; the desktop is offered first.
+void ZDLPresetList::shortcutPreset()
+{
+	QString name=currentName();
+	if (name.isEmpty()) {
+		QMessageBox::information(this, ZDL_APP_NAME, "Select a preset first.");
+		return;
+	}
+
+	QString ext=ZDLShortcut::extension();
+	QString suggested=QDir(QStandardPaths::writableLocation(QStandardPaths::DesktopLocation)).filePath(ZDLShortcut::safeFileName(name)+"."+ext);
+	QString filters=QString("%1 (*.%2);;All files (" QFD_FILTER_ALL ")").arg(ext=="lnk"?"Shortcuts":"Desktop entries").arg(ext);
+
+	//DontResolveSymlinks: on Windows, picking an existing shortcut to replace
+	//would otherwise hand back the file that shortcut points at.
+	QString fileName=QFileDialog::getSaveFileName(this, "Create shortcut", suggested, filters, NULL, QFileDialog::DontResolveSymlinks);
+	if (fileName.isEmpty())
+		return;
+	if (!fileName.endsWith("."+ext, Qt::CaseInsensitive))
+		fileName+="."+ext;
+
+	QString error;
+	if (!ZDLShortcut::create(fileName, name, &error))
+		QMessageBox::critical(this, ZDL_APP_NAME, "The shortcut could not be made: "+error);
 }
 
 void ZDLPresetList::showMenu(const QPoint &pos)
@@ -339,6 +404,7 @@ void ZDLPresetList::showMenu(const QPoint &pos)
 	menu.addSeparator();
 	QAction *edit=menu.addAction("Edit...");
 	QAction *xport=menu.addAction("Export as .zdl...");
+	QAction *shortcut=ZDLShortcut::supported()?menu.addAction("Create shortcut..."):NULL;
 	menu.addSeparator();
 	QAction *remove=menu.addAction("Delete");
 
@@ -352,6 +418,8 @@ void ZDLPresetList::showMenu(const QPoint &pos)
 		editPreset();
 	else if (picked==xport)
 		exportPreset();
+	else if (shortcut&&picked==shortcut)
+		shortcutPreset();
 	else if (picked==remove)
 		deletePreset();
 }

@@ -40,6 +40,9 @@ protected slots:
 protected:
 	QStringList getFilesMaps();
 	QComboBox *diffList;
+	QComboBox *compatList;
+	QCheckBox *fastCheck;
+	QCheckBox *respawnCheck;
 	QComboBox *sourceList;
 	QPushButton *btnRunPort;
 	QListWidget *IWADList;

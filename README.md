@@ -4,13 +4,13 @@ A launcher for ZDoom based Doom source ports: pick a port and an IWAD, add PWADs
 
 ## Features
 
-- **Presets** - named sets of PWADs, patches and configs, each optionally with its own source port and IWAD. Load, append or launch one in a click; edit it beside the PWAD library; import and export as `.zdl`.
+- **Presets** - named sets of PWADs, patches and configs, each optionally with its own source port and IWAD, and its own save folder and settings file so a mod's saves never mix with the vanilla game's. Load, append or launch one in a click; edit it beside the PWAD library; import and export as `.zdl`; make a desktop shortcut that starts straight into it, which also serves as a Steam entry.
 - **PWAD library** - a folder of your choosing, scanned recursively and watched for changes, with a filter and Folders / Newest / Name views. Select files or a whole folder and add them to the launch.
 - **idgames browser** - the whole /idgames archive, searchable offline from a mirror's own listing, with each entry's description. Installs straight into the PWAD folder, marks what is already installed, and opens the entry's Doomworld page for reviews and screenshots.
 - **Per-port parameters** - arguments a source port always gets, plus a *Run* button that starts a port on its own, which is how ports with a built-in updater get to update.
 - **Portable** - opt in with an empty `uzdl_portable.ini`; anything kept inside the uZDL folder is stored relative to it, so the folder moves or copies as one.
-- **Updates itself** - checks the GitHub releases on demand or once a day, shows the release notes, and on Windows downloads the new version, verifies it against the checksum GitHub publishes, installs it over the old files and restarts; on Linux it opens the release page for the new AppImage. Your configuration and files are never touched; *Skip this version* silences a release you do not want.
-- Themes (System, Light, Dark), multiplayer setup, demo playback and Windows file associations, as in ZDL.
+- **Updates itself** - checks the GitHub releases on demand or once a day, shows the release notes, and on Windows, and on Linux when run as the AppImage, downloads the new version, verifies it against the checksum GitHub publishes, installs it over the old one and restarts. Your configuration and files are never touched; *Skip this version* silences a release you do not want.
+- Themes (System, Light, Dark), multiplayer setup, demo playback and file associations, as in ZDL; on Linux the `.zdl` type is registered with the desktop.
 
 ## Download and install
 
@@ -34,7 +34,7 @@ A launcher for ZDoom based Doom source ports: pick a port and an IWAD, add PWADs
 Three tabs:
 
 - **General settings** - the source ports you have and the IWADs you own, added by drag and drop or the buttons, each port with its own parameters. Also the parameters always added to every launch, the theme, the update check and file associations.
-- **Launch config** - from left to right the PWAD library, the presets, the external files for this launch (in load order; an entry can be disabled to keep it in the list but off the command line), and the source port and IWAD with map, skill and multiplayer options. *Launch* starts the game; the *uZDL* menu shows the command line about to run.
+- **Launch config** - from left to right the PWAD library, the presets, the external files for this launch (in load order; an entry can be disabled to keep it in the list but off the command line), and the source port and IWAD with map, skill, compatibility mode, fast and respawning monsters, and multiplayer options. *Launch* starts the game; the *uZDL* menu shows the command line about to run.
 - **idgames** - *Update index* once to fetch the listing, then narrow it by type, age and name. *Download and install* unpacks the selection into the PWAD folder, where the library picks it up.
 
 Quickstart:
@@ -45,3 +45,5 @@ Quickstart:
 4. When a combination is worth keeping, press *Save as preset*. Next time, select the preset and press its *Launch*.
 
 The port and IWAD lists, the launch configuration, pane widths and window size are all remembered between sessions.
+
+A preset can be started from outside uZDL too: `uzdl --preset "Name"` loads it and launches the game, which is what the *Shortcut* button on the presets pane writes into a desktop shortcut. Add that shortcut to Steam as a non-Steam game and the preset appears there like any other title.

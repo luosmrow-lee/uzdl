@@ -111,12 +111,19 @@ void ZDLUpdateCheck::check(const QString &repo)
 	QObject::connect(reply, SIGNAL(finished()), this, SLOT(replyDone()));
 }
 
-//The package for this platform, by name: the release workflow calls it
-//uZDL-<version>-win64.zip. Any other asset a release might carry is ignored.
+//The package for this platform, by name: the release workflow calls them
+//uZDL-<version>-win64.zip and uZDL-<version>-<arch>.AppImage. Any other
+//asset a release might carry is ignored.
 static bool PlatformAsset(const QString &name)
 {
 #if defined(Q_OS_WIN)
 	return QRegularExpression("^uZDL-.*-win64\\.zip$", QRegularExpression::CaseInsensitiveOption).match(name).hasMatch();
+#elif defined(Q_OS_LINUX)
+	//Qt says arm64 where the package, named after the kernel, says aarch64.
+	QString arch=QSysInfo::currentCpuArchitecture();
+	if (arch=="arm64")
+		arch="aarch64";
+	return QRegularExpression("^uZDL-.*-"+QRegularExpression::escape(arch)+"\\.AppImage$", QRegularExpression::CaseInsensitiveOption).match(name).hasMatch();
 #else
 	Q_UNUSED(name);
 	return false;

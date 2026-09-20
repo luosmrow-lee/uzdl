@@ -21,27 +21,42 @@
 #include <QFileInfo>
 #include "ZDLPaths.h"
 
-QString ZDLPaths::appDir()
+QString ZDLPaths::appImage()
 {
-	QString dir=QDir::cleanPath(QCoreApplication::applicationDirPath());
-
 #if defined(Q_OS_LINUX)
-	//Inside an AppImage the executable runs from a read-only mount that is
-	//gone once it exits, so the folder uZDL is "in" is the one holding the
-	//AppImage file. The runtime names both: APPDIR for the mount, APPIMAGE
-	//for the file. Only an APPDIR this executable actually lives under
-	//counts, so that a pair of variables inherited from some other AppImage
-	//that started uZDL is ignored.
+	//The runtime names both the mount, APPDIR, and the file, APPIMAGE. Only
+	//an APPDIR this executable actually lives under counts, so that a pair
+	//of variables inherited from some other AppImage that started uZDL is
+	//ignored.
+	QString dir=QDir::cleanPath(QCoreApplication::applicationDirPath());
 	QString mount=QDir::cleanPath(qEnvironmentVariable("APPDIR"));
 	QString image=qEnvironmentVariable("APPIMAGE");
 	if (!mount.isEmpty()&&!image.isEmpty()&&(dir==mount||dir.startsWith(mount+"/"))) {
 		QFileInfo fi(image);
 		QString real=fi.canonicalFilePath();
-		dir=QDir::cleanPath(QFileInfo(real.isEmpty()?image:real).absolutePath());
+		return QDir::cleanPath(real.isEmpty()?fi.absoluteFilePath():real);
 	}
 #endif
 
-	return dir;
+	return QString();
+}
+
+QString ZDLPaths::appDir()
+{
+	//Inside an AppImage the executable runs from a read-only mount that is
+	//gone once it exits, so the folder uZDL is "in" is the one holding the
+	//AppImage file.
+	QString image=appImage();
+	if (!image.isEmpty())
+		return QFileInfo(image).absolutePath();
+
+	return QDir::cleanPath(QCoreApplication::applicationDirPath());
+}
+
+QString ZDLPaths::launcher()
+{
+	QString image=appImage();
+	return image.isEmpty()?QCoreApplication::applicationFilePath():image;
 }
 
 QString ZDLPaths::sourcePortsDir()

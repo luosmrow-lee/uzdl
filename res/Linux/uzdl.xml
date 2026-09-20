@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Tells the desktop what a .zdl file is, so a file manager can open one
+     with uZDL. Installed under share/mime/packages; the AppImage carries it
+     too, for the integration tools that read it from there. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-zdl">
+    <comment>ZDL launch configuration</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.zdl"/>
+  </mime-type>
+</mime-info>

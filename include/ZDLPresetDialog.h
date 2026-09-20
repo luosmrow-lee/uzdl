@@ -38,6 +38,11 @@ class ZDLPresetDialog: public QDialog {
 		QString presetPort();
 		//Empty when the preset should not touch the IWAD.
 		QString presetIwad();
+		//The preset's own save folder and config file, passed to the port
+		//as -savedir and -config; empty for the port's usual places.
+		QString presetSaveDir();
+		QString presetConfig();
+		void setKeepApart(const QString &savedir, const QString &config);
 		QList<ZDLFileEntry> presetEntries();
 
 		//Refuses to close on an empty name, so nothing typed or arranged is
@@ -51,6 +56,9 @@ class ZDLPresetDialog: public QDialog {
 		void moveDown();
 		void toggleExcluded();
 		void takeFromLaunch();
+		void browseSaveDir();
+		void browseConfig();
+		void ownFolder();
 		//Files picked in the embedded library, by its Add button or a double click.
 		void addFromLibrary(const QStringList &files);
 	private:
@@ -60,6 +68,8 @@ class ZDLPresetDialog: public QDialog {
 		QLineEdit *nameEdit;
 		QComboBox *portBox;
 		QComboBox *iwadBox;
+		QLineEdit *saveDirEdit;
+		QLineEdit *configEdit;
 		QListWidget *fileList;
 		ZDLPwadList *library;
 };

@@ -40,6 +40,7 @@ class ZDLPresetList: public ZDLWidget {
 		void deletePreset();
 		void exportPreset();
 		void importPreset();
+		void shortcutPreset();
 		void itemActivated(QListWidgetItem *item);
 		void showMenu(const QPoint &pos);
 	private:

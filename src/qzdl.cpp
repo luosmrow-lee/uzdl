@@ -25,6 +25,7 @@
 #include <QDir>
 
 #include "ZDLConfigurationManager.h"
+#include "ZDLLaunchFiles.h"
 #include "ZDLPaths.h"
 #include "ZDLMainWindow.h"
 
@@ -90,6 +91,17 @@ int main( int argc, char **argv ){
 	for(int i = 1; i < argc; i++){
 		eatenArgs << argv[i];
 	}
+
+	//--preset <name> loads that preset and starts the game with it, which is
+	//what a desktop shortcut or a Steam entry made for a preset passes. It
+	//comes out of the arguments here, before the name can be mistaken for a
+	//file to load. The name itself is read further down from QApplication's
+	//view of the command line: on Windows argv arrives in the ANSI code page,
+	//and a name with a character outside it would not survive the trip.
+	int presetArg = eatenArgs.indexOf("--preset");
+	bool presetGiven = presetArg >= 0;
+	if (presetGiven)
+		eatenArgs.remove(presetArg, presetArg+1 < eatenArgs.size() ? 2 : 1);
 	ZDLNullDevice nullDev;
 #if defined(ZDL_BLACKBOX)
 	QFile *loggingFile = NULL;
@@ -119,6 +131,14 @@ int main( int argc, char **argv ){
 
 	QApplication a( argc, argv );
 	qapp = &a;
+
+	QString presetToLaunch;
+	if (presetGiven){
+		QStringList args = a.arguments();
+		int at = args.indexOf("--preset");
+		if (at >= 0 && at+1 < args.size())
+			presetToLaunch = args[at+1];
+	}
 	ZDLConfigurationManager::setArgv(eatenArgs);
 	//Not argv[0], which on Linux is whatever the parent passed - "uzdl"
 	//alone when started from a menu or PATH - and so resolves nowhere.
@@ -263,6 +283,23 @@ int main( int argc, char **argv ){
 					return 0;
 				}
 			}
+		}
+	}
+
+	//The shortcut case: the preset goes to the launch tab as if loaded by
+	//hand, the game starts, and uZDL is done. Nothing is written back, so
+	//the launch tab is found as it was left. A wrong name gets a dialog,
+	//since a shortcut is the one place there is no other way to say so.
+	if (!presetToLaunch.isEmpty()){
+		QString section = ZDLLaunchFiles::presetSection(tconf, presetToLaunch);
+		if (section.isEmpty()){
+			QMessageBox::warning(mw, ZDL_APP_NAME, QString("There is no preset named \"%1\".").arg(presetToLaunch));
+		} else {
+			LOGDATA() << "Launching preset " << presetToLaunch << Qt::endl;
+			ZDLLaunchFiles::loadPreset(tconf, section);
+			mw->launch();
+			LOGDATA() << "ZDL QUIT" << Qt::endl;
+			return 0;
 		}
 	}
 

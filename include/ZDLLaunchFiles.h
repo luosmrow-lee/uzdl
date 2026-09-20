@@ -52,8 +52,19 @@ namespace ZDLLaunchFiles {
 	//files already listed so loading a preset twice cannot duplicate it.
 	//A port name, when given, is applied too. That has to happen inside this
 	//call, after the interface is flushed and before it re-reads, or the
-	//combo's own value would win.
-	void sendToLaunch(const QList<ZDLFileEntry> &entries, bool replace, const QString &port=QString(), const QString &iwad=QString());
+	//combo's own value would win. The save folder and config file are
+	//different: when replacing they are set or cleared outright, since a
+	//folder left over from the previous preset would quietly catch the
+	//next one's saves.
+	void sendToLaunch(const QList<ZDLFileEntry> &entries, bool replace, const QString &port=QString(), const QString &iwad=QString(), const QString &savedir=QString(), const QString &config=QString());
+
+	//Loads the preset in section: its files, and its port, IWAD, save
+	//folder and config file where it names them.
+	void loadPreset(ZDLConf *zconf, const QString &section);
+
+	//The section of the preset called name, compared without regard to
+	//case, or an empty string when there is none.
+	QString presetSection(ZDLConf *zconf, const QString &name);
 
 	//Preset sections, in ascending order.
 	QStringList presetSections(ZDLConf *zconf);

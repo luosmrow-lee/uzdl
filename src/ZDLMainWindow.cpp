@@ -284,6 +284,13 @@ void ZDLMainWindow::launch(){
 	QFileInfo exec_fi(exec);
 	bool no_err=true;
 
+	//A preset's own save folder and config file: made here, since not every
+	//port creates a folder it was told to save into.
+	if (zconf->hasValue("zdl.save", "savedir"))
+		QDir().mkpath(ZDLPaths::resolve(zconf->getValue("zdl.save", "savedir")));
+	if (zconf->hasValue("zdl.save", "config"))
+		QDir().mkpath(QFileInfo(ZDLPaths::resolve(zconf->getValue("zdl.save", "config"))).absolutePath());
+
 #ifdef Q_OS_WIN
 	PROCESS_INFORMATION pi={};
 	STARTUPINFO si={sizeof(STARTUPINFO), NULL, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, STARTF_USESHOWWINDOW, SW_SHOWNORMAL};
@@ -444,6 +451,26 @@ QString ZDLMainWindow::getArgumentsString(bool native_sep)
 		} else if (i_skill==6) {
 			args.append(" -nomonsters");
 		}
+	}
+
+	if (zconf->hasValue("zdl.save", "compatmode")){
+		args.append(" +compatmode ");
+		args.append(zconf->getValue("zdl.save", "compatmode"));
+	}
+	if (zconf->hasValue("zdl.save", "fast")&&zconf->getValue("zdl.save", "fast")=="1")
+		args.append(" -fast");
+	if (zconf->hasValue("zdl.save", "respawn")&&zconf->getValue("zdl.save", "respawn")=="1")
+		args.append(" -respawn");
+
+	//A preset's own save folder and settings file, kept apart from the
+	//port's usual places; see ZDLPresetDialog.
+	if (zconf->hasValue("zdl.save", "savedir")){
+		args.append(" -savedir ");
+		args.append(QuoteParam(IF_NATIVE_SEP(ZDLPaths::resolve(zconf->getValue("zdl.save", "savedir")))));
+	}
+	if (zconf->hasValue("zdl.save", "config")){
+		args.append(" -config ");
+		args.append(QuoteParam(IF_NATIVE_SEP(ZDLPaths::resolve(zconf->getValue("zdl.save", "config")))));
 	}
 
 	if (zconf->hasValue("zdl.save", "warp")){
@@ -698,6 +725,20 @@ QStringList ZDLMainWindow::getArgumentsList()
 			args<<"-nomonsters";
 		}
 	}
+
+	if (zconf->hasValue("zdl.save", "compatmode"))
+		args<<"+compatmode"<<zconf->getValue("zdl.save", "compatmode");
+	if (zconf->hasValue("zdl.save", "fast")&&zconf->getValue("zdl.save", "fast")=="1")
+		args<<"-fast";
+	if (zconf->hasValue("zdl.save", "respawn")&&zconf->getValue("zdl.save", "respawn")=="1")
+		args<<"-respawn";
+
+	//A preset's own save folder and settings file, kept apart from the
+	//port's usual places; see ZDLPresetDialog.
+	if (zconf->hasValue("zdl.save", "savedir"))
+		args<<"-savedir"<<ZDLPaths::resolve(zconf->getValue("zdl.save", "savedir"));
+	if (zconf->hasValue("zdl.save", "config"))
+		args<<"-config"<<ZDLPaths::resolve(zconf->getValue("zdl.save", "config"));
 
 	if (zconf->hasValue("zdl.save", "warp")){
 		QString map_arg=zconf->getValue("zdl.save", "warp");
