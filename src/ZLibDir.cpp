@@ -69,17 +69,25 @@ QString ZLibDir::getIwadinfoName()
 		QFile iwadinfo_file(iwadinfo_list.first().filePath());
 
 		if (iwadinfo_file.open(QIODevice::ReadOnly)) {
-			QRegularExpression name_re("\\s+Name\\s*=\\s*\"(.+?)\"\\s+", QRegularExpression::CaseInsensitiveOption);
-
-			QRegularExpressionMatch name_m=name_re.match(QString::fromUtf8(iwadinfo_file.readAll()));
-			if (name_m.hasMatch())
-				iwad_name=name_m.captured(1);
-
+			iwad_name=nameFromIwadinfo(QString::fromUtf8(iwadinfo_file.readAll()));
 			iwadinfo_file.close();
 		}
 	}
 
 	return iwad_name;
+}
+
+QStringList ZLibDir::getLumpNames()
+{
+	QStringList names;
+
+	QDirIterator it(file, QDir::Files|QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+	while (it.hasNext()) {
+		it.next();
+		names<<it.fileInfo().baseName().left(8).toUpper();
+	}
+
+	return names;
 }
 
 bool ZLibDir::isMAPXX()

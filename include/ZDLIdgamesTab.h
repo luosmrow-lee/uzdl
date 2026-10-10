@@ -61,6 +61,8 @@ class ZDLIdgamesTab: public ZDLWidget {
 		ZDLIdgamesTab(QWidget *parent=0);
 		virtual void rebuild();
 		virtual void newConfig();
+		//The mirrors of the idgames archive there is to choose from.
+		static QStringList mirrors();
 	protected slots:
 		void updateIndex();
 		void indexDone();

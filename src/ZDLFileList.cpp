@@ -20,6 +20,8 @@
 
 #include "ZDLFileList.h"
 #include "ZDLFileListable.h"
+#include "ZDLFileInspector.h"
+#include "ZDLPaths.h"
 #include "ZDLConfigurationManager.h"
 #include "gph_fld.xpm"
 
@@ -28,23 +30,28 @@
 #include <shlobj.h>
 #endif
 
-ZDLFileList::ZDLFileList(ZDLWidget *parent): 
+ZDLFileList::ZDLFileList(ZDLWidget *parent, const QString &section, bool buildEngine):
 	ZDLListWidget(parent), basic_fileopendialog(false)
 {
 	LOGDATAO() << "ZDLFileList" << Qt::endl;
+	launch = section.isEmpty() ? QString("zdl.save") : section;
+	build = buildEngine;
 
 	QPushButton *btnFolder = new QPushButton(this);
 	btnFolder->setIcon(QPixmap(glyph_folder));
-	btnFolder->setToolTip("Add directory");
+	btnFolder->setToolTip(build ? "Add a mod that comes as a folder of files, such as Zombie Nukem" : "Add directory");
 	buttonRow->insertWidget(0, btnFolder);
 
-	btnAdd->setToolTip("Add files");
+	btnAdd->setToolTip(build ? "Add mods: GRPs, zips, scripts, definitions, maps" : "Add files");
 	btnRem->setToolTip("Remove selected files and directories");
 	btnEdt->setToolTip("Disable (enable) files and directories");
 	btnUp->setToolTip("Move selected files and directories up");
 	btnDn->setToolTip("Move selected files and directories down");
 
 	QObject::connect(btnFolder, SIGNAL(clicked()), this, SLOT(folderButton()));
+
+	pList->setContextMenuPolicy(Qt::CustomContextMenu);
+	QObject::connect(pList, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(showMenu(QPoint)));
 
 #ifdef Q_OS_WIN
 	//On Win32 QFileDialog::getExistingDirectory(QFileDialog::ShowDirsOnly) will try to use native Win32 dialog for selecting directories
@@ -64,6 +71,18 @@ ZDLFileList::ZDLFileList(ZDLWidget *parent):
 #endif
 }
 
+//Right click on an external file: what it is.
+void ZDLFileList::showMenu(const QPoint &pos){
+	QListWidgetItem *item = pList->itemAt(pos);
+	if (!item)
+		return;
+
+	QMenu menu(this);
+	QAction *info = menu.addAction("File information...");
+	if (menu.exec(pList->viewport()->mapToGlobal(pos)) == info)
+		ZDLFileInspector::open(this, ZDLPaths::resolve(((ZDLFileListable*)item)->getFile()));
+}
+
 void ZDLFileList::newDrop(QStringList fileList){
 	LOGDATAO() << "newDrop" << Qt::endl;	
 	for (int i=0; i<fileList.size(); i++)
@@ -74,7 +93,7 @@ void ZDLFileList::newConfig(){
 	LOGDATAO() << "Reading new config" << Qt::endl;
 	pList->clear();
 	ZDLConf *zconf = ZDLConfigurationManager::getActiveConfiguration();
-	ZDLSection *section = zconf->getSection("zdl.save");
+	ZDLSection *section = zconf->getSection(launch);
 	if (section){
 		QVector <ZDLLine*> vctr;
 		section->getRegex("^file[0-9]+d?$", vctr);
@@ -94,7 +113,7 @@ void ZDLFileList::newConfig(){
 void ZDLFileList::rebuild(){
 	LOGDATAO() << "Saving config" << Qt::endl;
 	ZDLConf *zconf = ZDLConfigurationManager::getActiveConfiguration();
-	ZDLSection *section = zconf->getSection("zdl.save");
+	ZDLSection *section = zconf->getSection(launch);
 	if (section){
 		QVector <ZDLLine*> vctr;
 		section->getRegex("^file[0-9]+d?$", vctr);
@@ -102,7 +121,7 @@ void ZDLFileList::rebuild(){
 		for(int i = 0; i < vctr.size(); i++){
 			// Can't use the section to perform this operation
 			// Section is a clone of the real section
-			zconf->deleteValue("zdl.save", vctr[i]->getVariable());
+			zconf->deleteValue(launch, vctr[i]->getVariable());
 		}
 	}
 
@@ -112,7 +131,7 @@ void ZDLFileList::rebuild(){
 		ZDLFileListable* fitm = (ZDLFileListable*)itm;
 		QString name=QString("file%1").arg(i);
 		if (fitm->font().strikeOut()) name.append("d");
-		zconf->setValue("zdl.save", name, fitm->getFile());
+		zconf->setValue(launch, name, fitm->getFile());
 	}
 
 }
@@ -120,7 +139,15 @@ void ZDLFileList::rebuild(){
 void ZDLFileList::addButton()
 {
 	LOGDATAO() << "Adding new file" << Qt::endl;
-	QString filters =
+	//What the Build engine's ports load over a game: archives as -g or
+	//-file, scripts, definitions, maps and Remote Ridicule files.
+	QString buildFilters =
+		"Build engine mods (*.grp" QFD_FILTER_DELIM "*.zip" QFD_FILTER_DELIM "*.pk3" QFD_FILTER_DELIM "*.pk4" QFD_FILTER_DELIM "*.ssi" QFD_FILTER_DELIM "*.rff" QFD_FILTER_DELIM "*.con" QFD_FILTER_DELIM "*.def" QFD_FILTER_DELIM "*.map" QFD_FILTER_DELIM "*.rts" QFD_FILTER_DELIM "*.ini);;"
+		"Archives (*.grp" QFD_FILTER_DELIM "*.zip" QFD_FILTER_DELIM "*.pk3" QFD_FILTER_DELIM "*.pk4" QFD_FILTER_DELIM "*.ssi);;"
+		"Scripts and definitions (*.con" QFD_FILTER_DELIM "*.def);;"
+		"Maps (*.map);;"
+		"All files (" QFD_FILTER_ALL ")";
+	QString doomFilters =
 		"Doom resource files (*.wad" QFD_FILTER_DELIM "*.iwad" QFD_FILTER_DELIM "*.zip" QFD_FILTER_DELIM "*.pk3" QFD_FILTER_DELIM "*.ipk3" QFD_FILTER_DELIM "*.7z" QFD_FILTER_DELIM "*.pk7" QFD_FILTER_DELIM "*.ipk7" QFD_FILTER_DELIM "*.p7z" QFD_FILTER_DELIM "*.pkz" QFD_FILTER_DELIM "*.pke" QFD_FILTER_DELIM "*.bex" QFD_FILTER_DELIM "*.deh" QFD_FILTER_DELIM "*.cfg);;"
 		"WAD files (*.wad" QFD_FILTER_DELIM "*.iwad);;"
 		"Patch files (*.bex" QFD_FILTER_DELIM "*.deh);;"
@@ -130,7 +157,7 @@ void ZDLFileList::addButton()
 		"Specialized archives (*.pk3" QFD_FILTER_DELIM "*.ipk3" QFD_FILTER_DELIM "*.pk7" QFD_FILTER_DELIM "*.ipk7" QFD_FILTER_DELIM "*.p7z" QFD_FILTER_DELIM "*.pkz" QFD_FILTER_DELIM "*.pke);;"
 		"All files (" QFD_FILTER_ALL ")";
 
-	QStringList fileNames = QFileDialog::getOpenFileNames(this, "Add files", getWadLastDir(), filters);
+	QStringList fileNames = QFileDialog::getOpenFileNames(this, build ? "Add mods" : "Add files", getWadLastDir(), build ? buildFilters : doomFilters);
 	for(int i = 0; i < fileNames.size(); i++){
 		LOGDATAO() << "Adding file " << fileNames[i] << Qt::endl;
 		saveWadLastDir(fileNames[i]);

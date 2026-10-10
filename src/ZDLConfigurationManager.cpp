@@ -22,6 +22,26 @@
 #include "zdlcommon.h"
 #include <QSplitter>
 #include "ZDLConfigurationManager.h"
+#include "ZDLLaunchFiles.h"
+
+int ZDLConfigurationManager::writeConfigFile(){
+	ZDLConf *zconf = activeConfig;
+	if (!zconf || filename.isEmpty())
+		return -1;
+
+	zconf->setValue("zdl.general", "engine", "ZDL");
+	zconf->setValue("zdl.general", "version", ZDL_PRIVATE_VERSION_STRING);
+
+	if (zconf->hasValue("zdl.general", "rememberFilelist") && zconf->getValue("zdl.general", "rememberFilelist") == "0"){
+		ZDLConf *copy = zconf->clone();
+		copy->deleteRegex(ZDLLaunchFiles::LAUNCH_SECTION, "^file[0-9]+$");
+		copy->deleteRegex(ZDLLaunchFiles::BUILD_SECTION, "^file[0-9]+$");
+		int rc = copy->writeINI(filename);
+		delete copy;
+		return rc;
+	}
+	return zconf->writeINI(filename);
+}
 
 void ZDLConfigurationManager::init(){
 	activeConfig = NULL;

@@ -18,6 +18,8 @@
 
 #include <algorithm>
 #include "ZDLPresetDialog.h"
+#include "ZDLBuildArgs.h"
+#include "ZDLBuildGames.h"
 #include "ZDLPaths.h"
 #include "ZDLShortcut.h"
 #include "ZDLConfigurationManager.h"
@@ -29,9 +31,10 @@ extern ZDLMainWindow *mw;
 //list draws them, and the flag rides along in the item's data.
 #define ENTRY_EXCLUDED_ROLE (Qt::UserRole+1)
 
-ZDLPresetDialog::ZDLPresetDialog(QWidget *parent, const QString &name, const QString &port, const QString &iwad, const QList<ZDLFileEntry> &entries):
-	QDialog(parent)
+ZDLPresetDialog::ZDLPresetDialog(QWidget *parent, const QString &name, const QString &port, const QString &iwad, const QList<ZDLFileEntry> &entries, const QString &section, bool buildEngine):
+	QDialog(parent), originalName(name), library(NULL), build(buildEngine)
 {
+	launch=section.isEmpty()?QString(ZDLLaunchFiles::LAUNCH_SECTION):section;
 	setWindowTitle("Edit preset");
 	setWindowFlags(windowFlags()&~Qt::WindowContextHelpButtonHint);
 	resize(1060, 560);
@@ -56,6 +59,7 @@ ZDLPresetDialog::ZDLPresetDialog(QWidget *parent, const QString &name, const QSt
 	portBox=new QComboBox(this);
 	portBox->addItem("(leave unchanged)");
 
+	//The tab's own ports and games only, as its settings pane lists them.
 	ZDLConf *zconf=ZDLConfigurationManager::getActiveConfiguration();
 	ZDLSection *ports=zconf?zconf->getSection("zdl.ports"):NULL;
 	if (ports) {
@@ -65,7 +69,7 @@ ZDLPresetDialog::ZDLPresetDialog(QWidget *parent, const QString &name, const QSt
 			QString var=fileVctr[i]->getVariable();
 			QVector<ZDLLine*> nameVctr;
 			ports->getRegex("^p"+var.mid(1, var.length()-2)+"n$", nameVctr);
-			if (nameVctr.size()==1)
+			if (nameVctr.size()==1&&ZDLBuildArgs::isBuildPort(ZDLPaths::resolve(fileVctr[i]->getValue()))==build)
 				portBox->addItem(nameVctr[0]->getValue());
 		}
 	}
@@ -76,7 +80,7 @@ ZDLPresetDialog::ZDLPresetDialog(QWidget *parent, const QString &name, const QSt
 
 	//And the IWAD, for the same reason: a Heretic set is no use launched
 	//against DOOM2.WAD, and the launch tab keeps whatever was there before.
-	portRow->addWidget(new QLabel("IWAD", this));
+	portRow->addWidget(new QLabel(build?"Game":"IWAD", this));
 	iwadBox=new QComboBox(this);
 	iwadBox->addItem("(leave unchanged)");
 
@@ -88,7 +92,7 @@ ZDLPresetDialog::ZDLPresetDialog(QWidget *parent, const QString &name, const QSt
 			QString var=iwadVctr[i]->getVariable();
 			QVector<ZDLLine*> nameVctr;
 			iwads->getRegex("^i"+var.mid(1, var.length()-2)+"n$", nameVctr);
-			if (nameVctr.size()==1)
+			if (nameVctr.size()==1&&ZDLBuildGames::isBuildGameFile(ZDLPaths::resolve(iwadVctr[i]->getValue()))==build)
 				iwadBox->addItem(nameVctr[0]->getValue());
 		}
 	}
@@ -107,13 +111,18 @@ ZDLPresetDialog::ZDLPresetDialog(QWidget *parent, const QString &name, const QSt
 	QHBoxLayout *keepRow=new QHBoxLayout();
 	keepRow->addWidget(new QLabel("Save folder", this));
 	saveDirEdit=new QLineEdit(this);
-	saveDirEdit->setToolTip("Passed to the port as -savedir: where this preset's savegames go. Blank for the port's own folder.");
+	saveDirEdit->setToolTip(build
+		?"Passed to EDuke32, Rednukem and NBlood as -game_dir, and to Raze as -savedir: where this preset's savegames go. "
+			"The EDuke32 family also looks for game files there. Blank for the port's own folder."
+		:"Passed to the port as -savedir: where this preset's savegames go. Blank for the port's own folder.");
 	keepRow->addWidget(saveDirEdit, 1);
 	QPushButton *btnSaveDir=new QPushButton("Browse...", this);
 	keepRow->addWidget(btnSaveDir);
 	keepRow->addWidget(new QLabel("Config file", this));
 	configEdit=new QLineEdit(this);
-	configEdit->setToolTip("Passed to the port as -config: the settings file it reads and writes for this preset. Blank for the port's own.");
+	configEdit->setToolTip(build
+		?"Passed to EDuke32, Rednukem and NBlood as -cfg, and to Raze as -config: the settings file this preset uses. Blank for the port's own."
+		:"Passed to the port as -config: the settings file it reads and writes for this preset. Blank for the port's own.");
 	keepRow->addWidget(configEdit, 1);
 	QPushButton *btnConfig=new QPushButton("Browse...", this);
 	keepRow->addWidget(btnConfig);
@@ -125,26 +134,33 @@ ZDLPresetDialog::ZDLPresetDialog(QWidget *parent, const QString &name, const QSt
 	//The library sits beside the preset so files can be picked without
 	//going out to the launch tab and back. It is the same pane the launch
 	//tab uses, told to hand its choice here rather than to the launch list.
+	//It holds Doom's PWADs, so a Build preset goes without.
 	QSplitter *split=new QSplitter(this);
 
-	library=new ZDLPwadList(split);
-	library->setForwardToLaunch(false);
-	library->newConfig();
+	if (!build) {
+		library=new ZDLPwadList(split);
+		library->setForwardToLaunch(false);
+		library->newConfig();
+	}
 
 	QWidget *presetSide=new QWidget(split);
 	QVBoxLayout *presetColumn=new QVBoxLayout(presetSide);
 	presetColumn->setContentsMargins(0,0,0,0);
-	presetColumn->addWidget(new QLabel("In this preset", presetSide));
+	presetColumn->addWidget(new QLabel(build?"Mods in this preset":"In this preset", presetSide));
 
 	fileList=new QListWidget(presetSide);
 	fileList->setSelectionMode(QAbstractItemView::ExtendedSelection);
 	fileList->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
 	presetColumn->addWidget(fileList, 1);
 
-	split->addWidget(library);
-	split->addWidget(presetSide);
-	split->setStretchFactor(0, 2);
-	split->setStretchFactor(1, 3);
+	if (library) {
+		split->addWidget(library);
+		split->addWidget(presetSide);
+		split->setStretchFactor(0, 2);
+		split->setStretchFactor(1, 3);
+	} else {
+		split->addWidget(presetSide);
+	}
 	column->addWidget(split, 1);
 
 	foreach (const ZDLFileEntry &entry, entries)
@@ -154,7 +170,7 @@ ZDLPresetDialog::ZDLPresetDialog(QWidget *parent, const QString &name, const QSt
 	QPushButton *btnAdd=new QPushButton("Add files...", this);
 	QPushButton *btnFolder=new QPushButton("Add folder...", this);
 	QPushButton *btnTake=new QPushButton("Take from launch", this);
-	btnTake->setToolTip("Replace the contents with whatever the external file list currently holds");
+	btnTake->setToolTip(build?"Replace the contents with whatever the mods list currently holds":"Replace the contents with whatever the external file list currently holds");
 	QPushButton *btnRemove=new QPushButton("Remove", this);
 	QPushButton *btnExclude=new QPushButton("Exclude", this);
 	btnExclude->setToolTip("Keep the file in the preset but do not pass it to the source port");
@@ -174,7 +190,8 @@ ZDLPresetDialog::ZDLPresetDialog(QWidget *parent, const QString &name, const QSt
 	QDialogButtonBox *buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel, Qt::Horizontal, this);
 	column->addWidget(buttons);
 
-	QObject::connect(library, SIGNAL(filesChosen(QStringList)), this, SLOT(addFromLibrary(QStringList)));
+	if (library)
+		QObject::connect(library, SIGNAL(filesChosen(QStringList)), this, SLOT(addFromLibrary(QStringList)));
 	QObject::connect(btnAdd, SIGNAL(clicked()), this, SLOT(addFiles()));
 	QObject::connect(btnFolder, SIGNAL(clicked()), this, SLOT(addFolder()));
 	QObject::connect(btnTake, SIGNAL(clicked()), this, SLOT(takeFromLaunch()));
@@ -204,8 +221,20 @@ void ZDLPresetDialog::appendEntry(const ZDLFileEntry &entry)
 
 void ZDLPresetDialog::accept()
 {
-	if (presetName().isEmpty()) {
+	QString name=presetName();
+
+	if (name.isEmpty()) {
 		QMessageBox::information(this, ZDL_APP_NAME, "A preset needs a name.");
+		nameEdit->setFocus();
+		nameEdit->selectAll();
+		return;
+	}
+
+	//One name, one preset: a shortcut finds its preset by name, and two
+	//sharing one would send it to whichever came first.
+	ZDLConf *zconf=ZDLConfigurationManager::getActiveConfiguration();
+	if (name.compare(originalName, Qt::CaseInsensitive)&&zconf&&!ZDLLaunchFiles::presetSection(zconf, name).isEmpty()) {
+		QMessageBox::information(this, ZDL_APP_NAME, QString("A preset called \"%1\" exists already. Give this one another name.").arg(name));
 		nameEdit->setFocus();
 		nameEdit->selectAll();
 		return;
@@ -297,9 +326,11 @@ QList<ZDLFileEntry> ZDLPresetDialog::presetEntries()
 
 void ZDLPresetDialog::addFiles()
 {
-	QString filters=
-		"Doom resource files (*.wad" QFD_FILTER_DELIM "*.pk3" QFD_FILTER_DELIM "*.pk7" QFD_FILTER_DELIM "*.zip" QFD_FILTER_DELIM "*.7z" QFD_FILTER_DELIM "*.deh" QFD_FILTER_DELIM "*.bex" QFD_FILTER_DELIM "*.cfg" QFD_FILTER_DELIM "*.lmp);;"
-		"All files (" QFD_FILTER_ALL ")";
+	QString filters=build
+		?"Build engine mods (*.grp" QFD_FILTER_DELIM "*.zip" QFD_FILTER_DELIM "*.pk3" QFD_FILTER_DELIM "*.pk4" QFD_FILTER_DELIM "*.ssi" QFD_FILTER_DELIM "*.rff" QFD_FILTER_DELIM "*.con" QFD_FILTER_DELIM "*.def" QFD_FILTER_DELIM "*.map" QFD_FILTER_DELIM "*.rts" QFD_FILTER_DELIM "*.ini);;"
+			"All files (" QFD_FILTER_ALL ")"
+		:"Doom resource files (*.wad" QFD_FILTER_DELIM "*.pk3" QFD_FILTER_DELIM "*.pk7" QFD_FILTER_DELIM "*.zip" QFD_FILTER_DELIM "*.7z" QFD_FILTER_DELIM "*.deh" QFD_FILTER_DELIM "*.bex" QFD_FILTER_DELIM "*.cfg" QFD_FILTER_DELIM "*.lmp);;"
+			"All files (" QFD_FILTER_ALL ")";
 
 	QStringList chosen=QFileDialog::getOpenFileNames(this, "Add files to preset", getWadLastDir(), filters);
 
@@ -330,14 +361,14 @@ void ZDLPresetDialog::takeFromLaunch()
 	if (!zconf)
 		return;
 
-	QList<ZDLFileEntry> current=ZDLLaunchFiles::read(zconf, ZDLLaunchFiles::LAUNCH_SECTION);
+	QList<ZDLFileEntry> current=ZDLLaunchFiles::read(zconf, launch);
 	if (current.isEmpty()) {
-		QMessageBox::information(this, ZDL_APP_NAME, "The external file list is empty.");
+		QMessageBox::information(this, ZDL_APP_NAME, build?"The mods list is empty.":"The external file list is empty.");
 		return;
 	}
 
 	if (fileList->count()&&QMessageBox::question(this, ZDL_APP_NAME,
-			"Replace this preset's contents with the current external file list?",
+			build?"Replace this preset's mods with the current mods list?":"Replace this preset's contents with the current external file list?",
 			QMessageBox::Yes|QMessageBox::No, QMessageBox::No)!=QMessageBox::Yes)
 		return;
 

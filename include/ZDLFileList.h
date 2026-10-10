@@ -23,8 +23,13 @@
 class ZDLFileList : public ZDLListWidget{
 	Q_OBJECT
 	public:
-		ZDLFileList(ZDLWidget *parent);
+		//The external file list of a tab's launch configuration, kept in
+		//section, the Doom Engine tab's unless given; the Build Engine tab's
+		//picks mods rather than WADs.
+		ZDLFileList(ZDLWidget *parent, const QString &section=QString(), bool build=false);
 	protected:
+		QString launch;
+		bool build;
 		virtual void editButton(QListWidgetItem * item);
 		virtual void editButton(const QList<QListWidgetItem*> &items);
 		virtual void editButton();
@@ -35,6 +40,7 @@ class ZDLFileList : public ZDLListWidget{
 		bool basic_fileopendialog;
 	protected slots:
 		void folderButton();
+		void showMenu(const QPoint &pos);
 };
 
 #endif

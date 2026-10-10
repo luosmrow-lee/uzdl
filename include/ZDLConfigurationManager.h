@@ -49,6 +49,12 @@ class ZDLConfigurationManager{
 		static QPixmap getIcon();
 		static QString getConfigFileName();
 		static void setConfigFileName(QString name);
+		//Writes the active configuration to its file: with uZDL's version, and
+		//without the launch tabs' file lists when those are not to be kept,
+		//though the window keeps them for the rest of the session. Done at
+		//exit, and as soon as a preset changes, so that a shortcut to it
+		//finds it while uZDL is still open. Nought on success.
+		static int writeConfigFile();
 		static QStringList getArgv();
 		static void setArgv(QStringList args);
 		static QString getExec();

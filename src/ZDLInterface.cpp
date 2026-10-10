@@ -24,6 +24,8 @@
 #include <QMainWindow>
 #include "ZDLConfigurationManager.h"
 #include "ZDLAboutDialog.h"
+#include "ZDLFileInspector.h"
+#include "ZDLLaunchFiles.h"
 
 #include "ZDLMultiPane.h"
 #include "ZDLInterface.h"
@@ -247,6 +249,14 @@ QLayout *ZDLInterface::getButtonPane(){
 	context->addSeparator();
 	QAction *loadAction = context->addAction("Load .ini");
 	QAction *saveAction = context->addAction("Save .ini");
+	portableAction = context->addAction("Portable mode");
+	portableAction->setCheckable(true);
+	ZDLConfiguration *conf = ZDLConfigurationManager::getConfiguration();
+	portableAction->setChecked(conf && conf->isPortable());
+	portableAction->setToolTip("Keep the configuration in uzdl_portable.ini beside uZDL, so that the folder can be moved or copied whole");
+	context->addSeparator();
+	QAction *inspectAction = context->addAction("File information...");
+	inspectAction->setToolTip("What a WAD, archive, patch, demo or source port is and holds");
 	context->addSeparator();
 	QAction *aboutAction = context->addAction("About");
 	aboutAction->setShortcut(QKeySequence::HelpContents);
@@ -255,6 +265,9 @@ QLayout *ZDLInterface::getButtonPane(){
 	connect(saveAction, SIGNAL(triggered()), this, SLOT(saveConfigFile()));
 	connect(loadZdlFileAction, SIGNAL(triggered()), this, SLOT(loadZdlFile()));
 	connect(saveZdlFileAction, SIGNAL(triggered()), this, SLOT(saveZdlFile()));
+	//triggered rather than toggled: putting the tick back after a refusal
+	//must not come round here again.
+	connect(portableAction, SIGNAL(triggered(bool)), this, SLOT(togglePortable(bool)));
 	connect(aboutAction, SIGNAL(triggered()), this, SLOT(aboutClick()));
 #if !defined(NO_IMPORT)
 	connect(actImportCurrentConfig, SIGNAL(triggered()), this, SLOT(importCurrentConfig()));
@@ -265,6 +278,7 @@ QLayout *ZDLInterface::getButtonPane(){
 	connect(clearEverythingAction, SIGNAL(triggered()), this, SLOT(clearEverything()));
 
 	connect(showCommandline, SIGNAL(triggered()),this,SLOT(showCommandline()));
+	connect(inspectAction, SIGNAL(triggered()),this,SLOT(inspectFile()));
 	//connect(newDMFlagger, SIGNAL(triggered()),this,SLOT(showNewDMFlagger()));
 	connect(btnExit, SIGNAL(clicked()), this, SLOT(exitzdl()));
 
@@ -344,6 +358,10 @@ void ZDLInterface::launch(){
 	mw->launch();
 }
 
+void ZDLInterface::inspectFile(){
+	ZDLFileInspector::open(this);
+}
+
 void ZDLInterface::buttonPaneNewConfig(){
 	ZDLConf *zconf = ZDLConfigurationManager::getActiveConfiguration();
 	ZDLSection *section = zconf->getSection("zdl.save");
@@ -416,6 +434,57 @@ void ZDLInterface::saveConfigFile(){
 
 }
 
+//Portable mode switched from the menu: the configuration moves between
+//uzdl_portable.ini beside uZDL and the per-user file, and is written from
+//then on to where it moved. Turning it on leaves the per-user file as it
+//was; turning it off replaces the per-user file with the configuration as
+//it stands, which is the one the user has been working in.
+void ZDLInterface::togglePortable(bool on){
+	ZDLConfiguration *conf = ZDLConfigurationManager::getConfiguration();
+	if (!conf || on == conf->isPortable()){
+		portableAction->setChecked(conf && conf->isPortable());
+		return;
+	}
+
+	QString portablePath = QDir::toNativeSeparators(ZDLConfiguration::portableConfigPath());
+	QString userPath = QDir::toNativeSeparators(ZDLConfiguration::userConfigPath());
+	QString text = on
+		? QString("Turn portable mode on?\n\nThe configuration is written to\n%1\nand kept there from now on. The per-user file at\n%2\nis left as it is.").arg(portablePath, userPath)
+		: QString("Turn portable mode off?\n\nThe configuration is written to the per-user file\n%1\nreplacing what is there, and\n%2\nis moved to the recycle bin, or removed where there is none.").arg(userPath, portablePath);
+	if (QMessageBox::question(this, ZDL_APP_NAME, text, QMessageBox::Yes|QMessageBox::No, QMessageBox::Yes) != QMessageBox::Yes){
+		portableAction->setChecked(!on);
+		return;
+	}
+
+	//Everything the panes hold goes into the configuration first, as for
+	//Save .ini.
+	sendSignals();
+	ZDLConf *zconf = ZDLConfigurationManager::getActiveConfiguration();
+	QString target = on ? ZDLConfiguration::portableConfigPath() : ZDLConfiguration::userConfigPath();
+	QDir().mkpath(QFileInfo(target).absolutePath());
+	if (zconf->writeINI(target) != 0){
+		QMessageBox::warning(this, ZDL_APP_NAME, QString("The configuration could not be written to\n%1").arg(QDir::toNativeSeparators(target))
+			+ (on ? "\n\nPortable mode needs a folder uZDL can write to; one under Program Files will not do." : ""));
+		portableAction->setChecked(!on);
+		return;
+	}
+
+	if (!on){
+		QString portable = ZDLConfiguration::portableConfigPath();
+		if (!QFile::moveToTrash(portable) && !QFile::remove(portable)){
+			QMessageBox::warning(this, ZDL_APP_NAME, "uzdl_portable.ini could not be removed, so portable mode stays on. The per-user file holds a copy of the configuration now.");
+			portableAction->setChecked(true);
+			return;
+		}
+	}
+
+	ZDLConfigurationManager::setConfigFileName(target);
+	conf->setPortable(on);
+	//Ticked here too, for a switch made from the uZDL settings tab.
+	portableAction->setChecked(on);
+	mw->startRead();
+}
+
 void ZDLInterface::loadConfigFile(){
 	LOGDATAO() << "Loading config file" << Qt::endl;
 	ZDLConf *zconf = ZDLConfigurationManager::getActiveConfiguration();
@@ -452,27 +521,17 @@ void ZDLInterface::loadZdlFile(){
 
 	QString fileName = QFileDialog::getOpenFileName(this, "Load ZDL", getZdlLastDir(), filters);
 	if(!fileName.isNull() && !fileName.isEmpty()){
+		//Into the tab it was made for: a .zdl naming a Build port goes to
+		//the Build Engine tab, which is brought up to show it.
 		ZDLConf *current = ZDLConfigurationManager::getActiveConfiguration();
-		for(int i = 0; i < current->sections.size(); i++){
-			if(current->sections[i]->getName().compare("zdl.save") == 0){
-				ZDLSection *section = current->sections[i];
-				current->sections.remove(i);
-				delete section;
-				break;
-			}
-		}
 		ZDLConf *newConf = new ZDLConf();
 		newConf->readINI(fileName);
-		for(int i = 0; i < newConf->sections.size(); i++){
-			if(newConf->sections[i]->getName().compare("zdl.save") == 0){
-				ZDLSection *section = newConf->sections[i];
-				current->addSection(section->clone());
-				break;
-			}
-		}
+		QString target = ZDLLaunchFiles::loadZdl(current, newConf);
 		saveZdlLastDir(fileName);
 		delete newConf;
 		mw->startRead();
+		if (!target.isEmpty())
+			mw->showLaunchTab(target);
 	}
 }
 

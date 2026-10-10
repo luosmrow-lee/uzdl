@@ -324,6 +324,14 @@ QString ZDLIdgamesTab::indexCachePath()
 	return QDir(dir).filePath("idgames.idx");
 }
 
+QStringList ZDLIdgamesTab::mirrors()
+{
+	QStringList list;
+	for (int i=0; IDGAMES_MIRRORS[i]; i++)
+		list<<IDGAMES_MIRRORS[i];
+	return list;
+}
+
 void ZDLIdgamesTab::rebuild()
 {
 	saveSplitterSizes("splitidgames", idgamesSplit);
@@ -785,7 +793,7 @@ void ZDLIdgamesTab::download()
 	}
 
 	if (!havePwadFolder()) {
-		QMessageBox::information(this, ZDL_APP_NAME, "Choose a PWAD folder first, on the Launch config tab. Downloads are unpacked into it.");
+		QMessageBox::information(this, ZDL_APP_NAME, "Choose a PWAD folder first, on the Doom Engine tab. Downloads are unpacked into it.");
 		return;
 	}
 
@@ -862,7 +870,7 @@ void ZDLIdgamesTab::finishQueue()
 	if (queueFailed.isEmpty()) {
 		status->setText(QString("Installed %1 into the PWAD folder").arg(ok==1?QString("1 entry"):QString("%1 entries").arg(ok)));
 		if (queueTotal==1)
-			QMessageBox::information(this, ZDL_APP_NAME, "Installed. It appears in the PWAD list on the Launch config tab.");
+			QMessageBox::information(this, ZDL_APP_NAME, "Installed. It appears in the PWAD list on the Doom Engine tab.");
 	} else {
 		status->setText(QString("%1 installed, %2 failed").arg(ok).arg(queueFailed.size()));
 		QMessageBox::warning(this, ZDL_APP_NAME, QString("%1 of %2 could not be installed:\n\n").arg(queueFailed.size()).arg(queueTotal)+queueFailed.join("\n"));

@@ -1,3 +1,38 @@
+2026-10-10  luosmrow-lee <luosmrowlee@tuta.io>
+
+	* Release 1.1.0
+	* Added:
+		- Build Engine tab beside the launch tab, which is now called Doom Engine: the Build engine's games with presets, mods, source port, game, map, skill, respawning monsters and extra arguments of their own, kept apart from the Doom Engine tab's. Each tab lists only its own engine's ports, games and presets; a Build game set up on the launch tab of an earlier version moves over by itself, and a .zdl file or a preset's shortcut opens on the tab it was made for
+		- EDuke32, Rednukem, NBlood, PCExhumed and VoidSW get a command line of their own: the game's folder and file, add-ons, skill, no monsters, respawning monsters, the map field, and a preset's save folder and config file, each in the port's own words
+		- Duke Nukem 3D add-ons and total conversions EDuke32 does not know by itself are loaded over a base game, Atomic first, with their own main script
+		- Mods that come as a folder of files, such as Zombie Nukem, go in the Build Engine tab's mods; with no game picked, Duke Nukem 3D is put under a Duke mod or add-on by itself
+		- A big game or mod, such as Savior of Babes, gets a bigger cache by itself with -cachesize, unless the port's own parameters set one
+		- Blood add-ons that define their episodes in an INI of their own, such as Death Wish, are passed to NBlood with -ini, so their episodes show in New Game
+		- BuildGDX starts straight into the game, Witchaven, Witchaven II, TekWar and Legend of the Seven Paladins included
+		- Raze is offered a setup when it is added: on Windows its settings and saves kept beside it, and the folders of the Build games, a grps folder in the uZDL folder included, added to the folders it searches and kept up to date at every launch. Games and add-ons Raze does not know run over a base game, Route 66 with -route66 and Cryptic Passage with -cryptic
+		- Build games are told apart the way Raze and EDuke32 tell them, by exact size and CRC32, by .grpinfo files and by what a zip holds; games that come as a folder (Witchaven, Witchaven II, TekWar, Legend of the Seven Paladins, Liquidator) and Route 66's and Cryptic Passage's loose files are recognised, and add-ons and mods are named after their own episodes
+		- Find installed, beside the IWAD and source port lists and offered on a first start with nothing set up: looks for IWADs, Build games and source ports in Steam, GOG, the Bethesda launcher, ZOOM, DOOMWADDIR and the ports' own folders, and adds what is ticked
+		- IWADs are identified by their contents, the way GZDoom identifies them, the Unity and KEX re-releases included, so a mod's pk3 or nerve.wad is not taken for one
+		- Game patches on the uZDL settings tab: fixes for known faults in games' own files, each tied to the exact file it was written for and undone with Undo. The first are for Plunder & Pillage, Quest for Al-Qa'eda and Quest for Hussein, whose scripts made EDuke32 abort
+		- File information, from the uZDL menu, a right click in the lists, or by dropping a file on its window: what a file is and holds. IWADs and their release, PWADs and their maps, archives, DeHackEd patches, demos, .zdl files, source ports, Build games and mods
+		- uZDL settings tab, with everything about uZDL itself in one place
+		- Portable mode can be switched on and off from the uZDL menu
+		- A source port's name and version are shown in its tooltip: from the executable on Windows, "GZDoom 4.14.2", and from the package manager, Flatpak or the file's name on Linux. UZDoom, DSDA-Doom, Woof, Nugget Doom, Cherry Doom, Helion, k8vavoom and VKDoom are known by name
+		- Presets can be pinned to the top of the list and sorted by name
+		- Right-click menu in the PWAD library: add to the launch, open the folder, move to another folder, or delete, to the recycle bin where there is one
+		- --command-line, --find-report, --file-report and --raze-setup write out what uZDL would do, without starting anything
+	* Changed:
+		- The Launch config tab is renamed Doom Engine
+		- A preset's Load and Add are in its right-click menu and on a double click
+		- Presets are written to the configuration file as soon as they are saved, edited, imported, deleted or pinned, so a preset's shortcut works with uZDL still open
+		- A preset's shortcut starts the game without the uZDL window coming up; one whose preset was renamed or deleted says so and closes without touching the configuration
+		- A preset's own save folder and settings file are shown on the tab while they apply, with Stop using beside them, and are dropped once another port or game is picked
+		- The preset editor refuses a name already in use, since a shortcut finds its preset by name
+	* Fixed:
+		- No monsters was lost when the configuration was read again
+		- A preset naming a source port crashed uZDL when the configuration had no port list
+		- The question before launching with no IWAD was skipped when the selected IWAD was no longer in the list
+
 2026-09-20  luosmrow-lee <luosmrowlee@tuta.io>
 
 	* Release 1.0.2

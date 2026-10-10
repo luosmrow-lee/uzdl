@@ -28,6 +28,11 @@
 #include "ZDLConfigurationManager.h"
 #include "ZDLImportDialog.h"
 #include "ZDLMapFile.h"
+#include "ZDLRazeSetup.h"
+#include "ZDLBuildArgs.h"
+#include "ZDLBuildGames.h"
+#include "ZDLBuildTab.h"
+#include "ZDLLaunchFiles.h"
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -125,14 +130,21 @@ ZDLMainWindow::ZDLMainWindow(QWidget *parent):
 	}
 
 
+	launchSection = ZDLLaunchFiles::LAUNCH_SECTION;
 	intr = new ZDLInterface(this);
+	buildTab = new ZDLBuildTab(this);
 	settings = new ZDLSettingsTab(this);
+	appSettings = new ZDLAppSettingsTab(this);
 
 	widget->setDocumentMode(true);
 	idgames = new ZDLIdgamesTab(this);
 
-	widget->addTab(intr, "Launch config");
+	//The Doom engine's ports and games, and the Build engine's, each on a tab
+	//of its own with its own launch configuration, presets and files.
+	widget->addTab(intr, "Doom Engine");
+	widget->addTab(buildTab, "Build Engine");
 	widget->addTab(settings, "General settings");
+	widget->addTab(appSettings, "uZDL settings");
 	widget->addTab(idgames, "idgames");
 	setCentralWidget(widget);
 
@@ -240,19 +252,34 @@ void ZDLMainWindow::handleImport(){
 #endif
 }
 
+//The tabs left behind write what they hold into the configuration, and the
+//one coming up reads it back, so that no two of them disagree.
 void ZDLMainWindow::tabChange(int newTab){
 	LOGDATAO() << "Tab changed to " << newTab << Qt::endl;
-	if(newTab == 0){
+	QTabWidget *tabs = qobject_cast<QTabWidget*>(centralWidget());
+	QWidget *current = tabs ? tabs->widget(newTab) : NULL;
+
+	if (current != intr)
+		intr->notifyFromParent(NULL);
+	if (current != buildTab)
+		buildTab->notifyFromParent(NULL);
+	if (current != settings)
 		settings->notifyFromParent(NULL);
+	if (current != appSettings)
+		appSettings->rebuild();
+	if (current != idgames)
+		idgames->rebuild();
+
+	if (current == intr)
 		intr->readFromParent(NULL);
-	}else if (newTab == 1){
-		intr->notifyFromParent(NULL);
+	else if (current == buildTab)
+		buildTab->readFromParent(NULL);
+	else if (current == settings)
 		settings->readFromParent(NULL);
-	}else if (newTab == 2){
-		intr->notifyFromParent(NULL);
-		settings->notifyFromParent(NULL);
+	else if (current == appSettings)
+		appSettings->newConfig();
+	else if (current == idgames)
 		idgames->newConfig();
-	}
 }
 
 void ZDLMainWindow::quit(){
@@ -261,9 +288,54 @@ void ZDLMainWindow::quit(){
 	close();
 }
 
+//Whether the IWAD list has an entry by this name. A preset can carry one
+//from before the list changed, and the launch tab, which would have dropped
+//it on a re-read, is not consulted on the command-line path.
+static bool IwadKnown(ZDLConf *zconf, const QString &name)
+{
+	if (name.isEmpty())
+		return false;
+
+	ZDLSection *section = zconf->getSection("zdl.iwads");
+	if (!section)
+		return false;
+
+	QVector<ZDLLine*> names;
+	section->getRegex("^i[0-9]+n$", names);
+	foreach (ZDLLine *line, names) {
+		if (line->getValue().compare(name) == 0)
+			return true;
+	}
+
+	return false;
+}
+
+//From the tab on show: Enter on the Build Engine tab starts its game.
 void ZDLMainWindow::launch(){
-	LOGDATAO() << "Launching" << Qt::endl;
+	QTabWidget *tabs = qobject_cast<QTabWidget*>(centralWidget());
+	launchFrom(tabs && tabs->currentWidget() == buildTab ? QString(ZDLLaunchFiles::BUILD_SECTION) : QString(ZDLLaunchFiles::LAUNCH_SECTION));
+}
+
+void ZDLMainWindow::showLaunchTab(const QString &section){
+	QTabWidget *tabs = qobject_cast<QTabWidget*>(centralWidget());
+	if (tabs)
+		tabs->setCurrentWidget(section == ZDLLaunchFiles::BUILD_SECTION ? (QWidget*)buildTab : (QWidget*)intr);
+}
+
+void ZDLMainWindow::launchFrom(const QString &section){
+	LOGDATAO() << "Launching from " << section << Qt::endl;
 	writeConfig();
+	QString previous = launchSection;
+	setLaunchSection(section);
+	launchNow();
+	setLaunchSection(previous);
+}
+
+//The launch itself, from the configuration as it stands. launch flushes the
+//panes into it first; a launch asked for on the command line writes what it
+//wants straight in and comes here, so that nothing a pane holds, or has yet
+//to be told, can get between the preset and the port.
+void ZDLMainWindow::launchNow(){
 	ZDLConf *zconf = ZDLConfigurationManager::getActiveConfiguration();
 
 	QString exec=getExecutable();
@@ -274,7 +346,8 @@ void ZDLMainWindow::launch(){
 	//An IWAD can be deselected on purpose so the port falls back on its own
 	//default, so this asks rather than refuses. Launching silently ends in
 	//the port's error dialog instead, which is a worse place to find out.
-	if (!zconf->hasValue("zdl.save", "iwad")||zconf->getValue("zdl.save", "iwad").isEmpty()){
+	//A name the IWAD list no longer has counts as none.
+	if (!zconf->hasValue(launchSection, "iwad")||!IwadKnown(zconf, zconf->getValue(launchSection, "iwad"))){
 		if (QMessageBox::question(this, ZDL_APP_NAME,
 				"No IWAD is selected. Launch anyway and let the source port choose one?",
 				QMessageBox::Yes|QMessageBox::No, QMessageBox::Yes)!=QMessageBox::Yes)
@@ -284,12 +357,16 @@ void ZDLMainWindow::launch(){
 	QFileInfo exec_fi(exec);
 	bool no_err=true;
 
+	//UZDL_DIR for the port to inherit, and for a Raze set up for uZDL its
+	//search list brought up to date first.
+	ZDLRazeSetup::prepareLaunch(zconf, exec_fi.absoluteFilePath(), launchSection);
+
 	//A preset's own save folder and config file: made here, since not every
 	//port creates a folder it was told to save into.
-	if (zconf->hasValue("zdl.save", "savedir"))
-		QDir().mkpath(ZDLPaths::resolve(zconf->getValue("zdl.save", "savedir")));
-	if (zconf->hasValue("zdl.save", "config"))
-		QDir().mkpath(QFileInfo(ZDLPaths::resolve(zconf->getValue("zdl.save", "config"))).absolutePath());
+	if (zconf->hasValue(launchSection, "savedir"))
+		QDir().mkpath(ZDLPaths::resolve(zconf->getValue(launchSection, "savedir")));
+	if (zconf->hasValue(launchSection, "config"))
+		QDir().mkpath(QFileInfo(ZDLPaths::resolve(zconf->getValue(launchSection, "config"))).absolutePath());
 
 #ifdef Q_OS_WIN
 	PROCESS_INFORMATION pi={};
@@ -413,7 +490,21 @@ QString ZDLMainWindow::getArgumentsString(bool native_sep)
 	ZDLConf *zconf = ZDLConfigurationManager::getActiveConfiguration();
 	ZDLSection *section = NULL;
 
-	QString iwadName = zconf->getValue("zdl.save", "iwad");
+	//A port of the EDuke32 family gets its own command line in place of
+	//the ZDoom one; only the user's parameters are shared.
+	QString exe = getExecutable();
+	if (ZDLBuildArgs::handles(exe)){
+		foreach (const QString &item, ZDLBuildArgs::arguments(zconf, exe, launchSection)){
+			if (!args.isEmpty())
+				args.append(' ');
+			args.append(QuoteParam(IF_NATIVE_SEP(item)));
+		}
+		appendUserParams(args);
+		LOGDATAO() << "args: " << args << Qt::endl;
+		return args.trimmed();
+	}
+
+	QString iwadName = zconf->getValue(launchSection, "iwad");
 	QString iwadPath;
 
 	section = zconf->getSection("zdl.iwads");
@@ -432,17 +523,36 @@ QString ZDLMainWindow::getArgumentsString(bool native_sep)
 					section->getRegex("^" + var + "$",nameVctr);
 					if(nameVctr.size() == 1){
 						iwadPath=ZDLPaths::resolve(nameVctr[0]->getValue());
-						args.append("-iwad ");
-						args.append(QuoteParam(IF_NATIVE_SEP(iwadPath)));
+						//Raze: what it does not pick by itself goes over a base game.
+						ZDLBuildGames::RazeLaunch raze;
+						raze.iwad=iwadPath;
+						if (ZDLRazeSetup::isRaze(exe))
+							raze=ZDLBuildGames::forRaze(iwadPath, ZDLBuildArgs::libraryFiles(zconf));
+						if (!raze.iwad.isEmpty()){
+							args.append("-iwad ");
+							args.append(QuoteParam(IF_NATIVE_SEP(raze.iwad)));
+						}
+						if (!raze.file.isEmpty()){
+							args.append(" -file ");
+							args.append(QuoteParam(IF_NATIVE_SEP(raze.file)));
+						}
+						if (!raze.script.isEmpty()){
+							args.append(" -con ");
+							args.append(QuoteParam(raze.script));
+						}
+						foreach (const QString &item, raze.switches){
+							args.append(' ');
+							args.append(item);
+						}
 					}
 				}
 			}
 		}
 	}
 
-	if (zconf->hasValue("zdl.save", "skill")){
+	if (zconf->hasValue(launchSection, "skill")){
 		bool ok;
-		QString s_skill=zconf->getValue("zdl.save", "skill");
+		QString s_skill=zconf->getValue(launchSection, "skill");
 		int i_skill=s_skill.toInt(&ok, 10);
 
 		if (i_skill>0&&i_skill<6) {
@@ -453,28 +563,28 @@ QString ZDLMainWindow::getArgumentsString(bool native_sep)
 		}
 	}
 
-	if (zconf->hasValue("zdl.save", "compatmode")){
+	if (zconf->hasValue(launchSection, "compatmode")){
 		args.append(" +compatmode ");
-		args.append(zconf->getValue("zdl.save", "compatmode"));
+		args.append(zconf->getValue(launchSection, "compatmode"));
 	}
-	if (zconf->hasValue("zdl.save", "fast")&&zconf->getValue("zdl.save", "fast")=="1")
+	if (zconf->hasValue(launchSection, "fast")&&zconf->getValue(launchSection, "fast")=="1")
 		args.append(" -fast");
-	if (zconf->hasValue("zdl.save", "respawn")&&zconf->getValue("zdl.save", "respawn")=="1")
+	if (zconf->hasValue(launchSection, "respawn")&&zconf->getValue(launchSection, "respawn")=="1")
 		args.append(" -respawn");
 
 	//A preset's own save folder and settings file, kept apart from the
 	//port's usual places; see ZDLPresetDialog.
-	if (zconf->hasValue("zdl.save", "savedir")){
+	if (zconf->hasValue(launchSection, "savedir")){
 		args.append(" -savedir ");
-		args.append(QuoteParam(IF_NATIVE_SEP(ZDLPaths::resolve(zconf->getValue("zdl.save", "savedir")))));
+		args.append(QuoteParam(IF_NATIVE_SEP(ZDLPaths::resolve(zconf->getValue(launchSection, "savedir")))));
 	}
-	if (zconf->hasValue("zdl.save", "config")){
+	if (zconf->hasValue(launchSection, "config")){
 		args.append(" -config ");
-		args.append(QuoteParam(IF_NATIVE_SEP(ZDLPaths::resolve(zconf->getValue("zdl.save", "config")))));
+		args.append(QuoteParam(IF_NATIVE_SEP(ZDLPaths::resolve(zconf->getValue(launchSection, "config")))));
 	}
 
-	if (zconf->hasValue("zdl.save", "warp")){
-		QString map_arg=zconf->getValue("zdl.save", "warp");
+	if (zconf->hasValue(launchSection, "warp")){
+		QString map_arg=zconf->getValue(launchSection, "warp");
 		QStringList warp_args=WarpBackwardCompat(iwadPath, map_arg);
 
 		if (warp_args.length()) {
@@ -486,7 +596,7 @@ QString ZDLMainWindow::getArgumentsString(bool native_sep)
 		}
 	}
 
-	section = zconf->getSection("zdl.save");
+	section = zconf->getSection(launchSection);
 	QStringList pwads;
 	QStringList dehs;
 	QStringList bexs;
@@ -550,17 +660,17 @@ QString ZDLMainWindow::getArgumentsString(bool native_sep)
 		args.append(QuoteParam(IF_NATIVE_SEP(str)));
 	}
 
-	if(zconf->hasValue("zdl.save","gametype")){
-		QString tGameType = zconf->getValue("zdl.save","gametype");
+	if(zconf->hasValue(launchSection,"gametype")){
+		QString tGameType = zconf->getValue(launchSection,"gametype");
 		if(tGameType != "0"){
-			if (zconf->hasValue("zdl.save", "dmflags")){
+			if (zconf->hasValue(launchSection, "dmflags")){
 				args.append(" +set dmflags ");
-				args.append(zconf->getValue("zdl.save", "dmflags"));
+				args.append(zconf->getValue(launchSection, "dmflags"));
 			}
 
-			if (zconf->hasValue("zdl.save", "dmflags2")){
+			if (zconf->hasValue(launchSection, "dmflags2")){
 				args.append(" +set dmflags2 ");
-				args.append(zconf->getValue("zdl.save", "dmflags2"));
+				args.append(zconf->getValue(launchSection, "dmflags2"));
 			}
 
 			if (tGameType == "2"){
@@ -570,65 +680,75 @@ QString ZDLMainWindow::getArgumentsString(bool native_sep)
 			}
 
 			int players = 0;
-			if(zconf->hasValue("zdl.save","players")){
+			if(zconf->hasValue(launchSection,"players")){
 				bool ok;
-				players = zconf->getValue("zdl.save","players").toInt(&ok, 10);
+				players = zconf->getValue(launchSection,"players").toInt(&ok, 10);
 			}
 			if(players > 0){
 				args.append(" -host ");
 				args.append(QString::number(players));
-				if(zconf->hasValue("zdl.save","mp_port")){
+				if(zconf->hasValue(launchSection,"mp_port")){
 					args.append(" -port ");
-					args.append(zconf->getValue("zdl.save","mp_port"));
+					args.append(zconf->getValue(launchSection,"mp_port"));
 				}
 			}else if(players == 0){
-				if(zconf->hasValue("zdl.save", "host")) {
+				if(zconf->hasValue(launchSection, "host")) {
 					args.append(" -join ");
-					if (zconf->hasValue("zdl.save", "mp_port")) {
+					if (zconf->hasValue(launchSection, "mp_port")) {
 						QRegularExpression trailing_port(":\\d*\\s*$");
-						args.append(zconf->getValue("zdl.save", "host").remove(trailing_port)+":"+zconf->getValue("zdl.save", "mp_port"));
+						args.append(zconf->getValue(launchSection, "host").remove(trailing_port)+":"+zconf->getValue(launchSection, "mp_port"));
 					} else {
-						args.append(zconf->getValue("zdl.save", "host"));
+						args.append(zconf->getValue(launchSection, "host"));
 					}
 				}
 			}
-			if(zconf->hasValue("zdl.save","fraglimit")){
+			if(zconf->hasValue(launchSection,"fraglimit")){
 				args.append(" +set fraglimit ");
-				args.append(zconf->getValue("zdl.save","fraglimit"));
+				args.append(zconf->getValue(launchSection,"fraglimit"));
 			}
-			if(zconf->hasValue("zdl.save","timelimit")){
+			if(zconf->hasValue(launchSection,"timelimit")){
 				args.append(" +set timelimit ");
-				args.append(zconf->getValue("zdl.save","timelimit"));
+				args.append(zconf->getValue(launchSection,"timelimit"));
 			}
-			if(zconf->hasValue("zdl.save","extratic")){
-				QString tVal = zconf->getValue("zdl.save","extratic");
+			if(zconf->hasValue(launchSection,"extratic")){
+				QString tVal = zconf->getValue(launchSection,"extratic");
 				if(tVal == "1"){
 					args.append(" -extratic");
 				}
 			}
-			if(zconf->hasValue("zdl.save","netmode")){
-				QString tVal = zconf->getValue("zdl.save","netmode");
+			if(zconf->hasValue(launchSection,"netmode")){
+				QString tVal = zconf->getValue(launchSection,"netmode");
 				if(tVal != "-1"){
 					args.append(" -netmode ");
 					args.append(tVal);
 				}
 			}
-			if(zconf->hasValue("zdl.save","dup")){
-				QString tVal = zconf->getValue("zdl.save","dup");
+			if(zconf->hasValue(launchSection,"dup")){
+				QString tVal = zconf->getValue(launchSection,"dup");
 				if(tVal != "0"){
 					args.append(" -dup ");
 					args.append(tVal);
 				}
 			}
-			if(zconf->hasValue("zdl.save","savegame")){
+			if(zconf->hasValue(launchSection,"savegame")){
 				args.append(" -loadgame ");
-				args.append(QuoteParam(IF_NATIVE_SEP(zconf->getValue("zdl.save","savegame"))));
+				args.append(QuoteParam(IF_NATIVE_SEP(zconf->getValue(launchSection,"savegame"))));
 			}
 		}
 	}
 
-	//The port's own parameters go first: they are that port's defaults, and
-	//the global and per-launch ones below are the user's overrides.
+	appendUserParams(args);
+
+	LOGDATAO() << "args: " << args << Qt::endl;
+	return args.trimmed();
+}
+
+//The port's own parameters go first: they are that port's defaults, and
+//the global and per-launch ones below are the user's overrides.
+void ZDLMainWindow::appendUserParams(QString &args)
+{
+	ZDLConf *zconf = ZDLConfigurationManager::getActiveConfiguration();
+
 	QString portParams = getPortParams();
 	if (!portParams.isEmpty()){
 		args.append(' ');
@@ -640,13 +760,15 @@ QString ZDLMainWindow::getArgumentsString(bool native_sep)
 		args.append(ExpandEnvironmentStringsWrapper(zconf->getValue("zdl.general", "alwaysadd")));
 	}
 
-	if (zconf->hasValue("zdl.save", "extra")){
+	if (zconf->hasValue(launchSection, "extra")){
 		args.append(' ');
-		args.append(ExpandEnvironmentStringsWrapper(zconf->getValue("zdl.save", "extra")));
+		args.append(ExpandEnvironmentStringsWrapper(zconf->getValue(launchSection, "extra")));
 	}
+}
 
-	LOGDATAO() << "args: " << args << Qt::endl;
-	return args.trimmed();
+void ZDLMainWindow::appendUserParams(QStringList &args)
+{
+	Q_UNUSED(args);
 }
 
 QStringList ZDLMainWindow::getArgumentsList()
@@ -688,8 +810,18 @@ QStringList ZDLMainWindow::getArgumentsList()
 	ZDLConf *zconf = ZDLConfigurationManager::getActiveConfiguration();
 	ZDLSection *section = NULL;
 
+	//A port of the EDuke32 family gets its own command line in place of
+	//the ZDoom one; only the user's parameters are shared.
+	QString exe = getExecutable();
+	if (ZDLBuildArgs::handles(exe)){
+		args<<ZDLBuildArgs::arguments(zconf, exe, launchSection);
+		appendUserParams(args);
+		LOGDATAO() << "args: " << args << Qt::endl;
+		return args;
+	}
+
 	QString iwadPath;
-	QString iwadName = zconf->getValue("zdl.save", "iwad");
+	QString iwadName = zconf->getValue(launchSection, "iwad");
 
 	section = zconf->getSection("zdl.iwads");
 	if (section&&iwadName.length()){
@@ -707,16 +839,27 @@ QStringList ZDLMainWindow::getArgumentsList()
 					section->getRegex("^" + var + "$",nameVctr);
 					if(nameVctr.size() == 1){
 						iwadPath=ZDLPaths::resolve(nameVctr[0]->getValue());
-						args<<"-iwad"<<iwadPath;
+						//Raze: what it does not pick by itself goes over a base game.
+						ZDLBuildGames::RazeLaunch raze;
+						raze.iwad=iwadPath;
+						if (ZDLRazeSetup::isRaze(exe))
+							raze=ZDLBuildGames::forRaze(iwadPath, ZDLBuildArgs::libraryFiles(zconf));
+						if (!raze.iwad.isEmpty())
+							args<<"-iwad"<<raze.iwad;
+						if (!raze.file.isEmpty())
+							args<<"-file"<<raze.file;
+						if (!raze.script.isEmpty())
+							args<<"-con"<<raze.script;
+						args<<raze.switches;
 					}
 				}
 			}
 		}
 	}
 
-	if (zconf->hasValue("zdl.save", "skill")){
+	if (zconf->hasValue(launchSection, "skill")){
 		bool ok;
-		QString s_skill=zconf->getValue("zdl.save", "skill");
+		QString s_skill=zconf->getValue(launchSection, "skill");
 		int i_skill=s_skill.toInt(&ok, 10);
 
 		if (i_skill>0&&i_skill<6) {
@@ -726,22 +869,22 @@ QStringList ZDLMainWindow::getArgumentsList()
 		}
 	}
 
-	if (zconf->hasValue("zdl.save", "compatmode"))
-		args<<"+compatmode"<<zconf->getValue("zdl.save", "compatmode");
-	if (zconf->hasValue("zdl.save", "fast")&&zconf->getValue("zdl.save", "fast")=="1")
+	if (zconf->hasValue(launchSection, "compatmode"))
+		args<<"+compatmode"<<zconf->getValue(launchSection, "compatmode");
+	if (zconf->hasValue(launchSection, "fast")&&zconf->getValue(launchSection, "fast")=="1")
 		args<<"-fast";
-	if (zconf->hasValue("zdl.save", "respawn")&&zconf->getValue("zdl.save", "respawn")=="1")
+	if (zconf->hasValue(launchSection, "respawn")&&zconf->getValue(launchSection, "respawn")=="1")
 		args<<"-respawn";
 
 	//A preset's own save folder and settings file, kept apart from the
 	//port's usual places; see ZDLPresetDialog.
-	if (zconf->hasValue("zdl.save", "savedir"))
-		args<<"-savedir"<<ZDLPaths::resolve(zconf->getValue("zdl.save", "savedir"));
-	if (zconf->hasValue("zdl.save", "config"))
-		args<<"-config"<<ZDLPaths::resolve(zconf->getValue("zdl.save", "config"));
+	if (zconf->hasValue(launchSection, "savedir"))
+		args<<"-savedir"<<ZDLPaths::resolve(zconf->getValue(launchSection, "savedir"));
+	if (zconf->hasValue(launchSection, "config"))
+		args<<"-config"<<ZDLPaths::resolve(zconf->getValue(launchSection, "config"));
 
-	if (zconf->hasValue("zdl.save", "warp")){
-		QString map_arg=zconf->getValue("zdl.save", "warp");
+	if (zconf->hasValue(launchSection, "warp")){
+		QString map_arg=zconf->getValue(launchSection, "warp");
 		QStringList warp_args=WarpBackwardCompat(iwadPath, map_arg);
 
 		if (warp_args.length()) {
@@ -751,7 +894,7 @@ QStringList ZDLMainWindow::getArgumentsList()
 		}
 	}
 
-	section = zconf->getSection("zdl.save");
+	section = zconf->getSection(launchSection);
 	QStringList pwads;
 	QStringList dehs;
 	QStringList bexs;
@@ -810,15 +953,15 @@ QStringList ZDLMainWindow::getArgumentsList()
 		args<<"-playdemo"<<str;
 	}
 
-	if(zconf->hasValue("zdl.save","gametype")){
-		QString tGameType = zconf->getValue("zdl.save","gametype");
+	if(zconf->hasValue(launchSection,"gametype")){
+		QString tGameType = zconf->getValue(launchSection,"gametype");
 		if(tGameType != "0"){
-			if (zconf->hasValue("zdl.save", "dmflags")){
-				args<<"+set"<<"dmflags"<<zconf->getValue("zdl.save", "dmflags");
+			if (zconf->hasValue(launchSection, "dmflags")){
+				args<<"+set"<<"dmflags"<<zconf->getValue(launchSection, "dmflags");
 			}
 
-			if (zconf->hasValue("zdl.save", "dmflags2")){
-				args<<"+set"<<"dmflags2"<<zconf->getValue("zdl.save", "dmflags2");
+			if (zconf->hasValue(launchSection, "dmflags2")){
+				args<<"+set"<<"dmflags2"<<zconf->getValue(launchSection, "dmflags2");
 			}
 
 			if (tGameType == "2"){
@@ -828,55 +971,67 @@ QStringList ZDLMainWindow::getArgumentsList()
 			}
 
 			int players = 0;
-			if(zconf->hasValue("zdl.save","players")){
+			if(zconf->hasValue(launchSection,"players")){
 				bool ok;
-				players = zconf->getValue("zdl.save","players").toInt(&ok, 10);
+				players = zconf->getValue(launchSection,"players").toInt(&ok, 10);
 			}
 			if(players > 0){
 				args<<"-host"<<QString::number(players);
-				if(zconf->hasValue("zdl.save","mp_port")){
-					args<<"-port"<<zconf->getValue("zdl.save","mp_port");
+				if(zconf->hasValue(launchSection,"mp_port")){
+					args<<"-port"<<zconf->getValue(launchSection,"mp_port");
 				}
 			}else if(players == 0){
-				if(zconf->hasValue("zdl.save", "host")) {
+				if(zconf->hasValue(launchSection, "host")) {
 					args<<"-join";
-					if (zconf->hasValue("zdl.save", "mp_port")) {
+					if (zconf->hasValue(launchSection, "mp_port")) {
 						QRegularExpression trailing_port(":\\d*\\s*$");
-						args<<zconf->getValue("zdl.save", "host").remove(trailing_port)+":"+zconf->getValue("zdl.save", "mp_port");
+						args<<zconf->getValue(launchSection, "host").remove(trailing_port)+":"+zconf->getValue(launchSection, "mp_port");
 					} else {
-						args<<zconf->getValue("zdl.save", "host");
+						args<<zconf->getValue(launchSection, "host");
 					}
 				}
 			}
-			if(zconf->hasValue("zdl.save","fraglimit")){
-				args<<"+set"<<"fraglimit"<<zconf->getValue("zdl.save","fraglimit");
+			if(zconf->hasValue(launchSection,"fraglimit")){
+				args<<"+set"<<"fraglimit"<<zconf->getValue(launchSection,"fraglimit");
 			}
-			if(zconf->hasValue("zdl.save","timelimit")){
-				args<<"+set"<<"timelimit"<<zconf->getValue("zdl.save","timelimit");
+			if(zconf->hasValue(launchSection,"timelimit")){
+				args<<"+set"<<"timelimit"<<zconf->getValue(launchSection,"timelimit");
 			}
-			if(zconf->hasValue("zdl.save","extratic")){
-				QString tVal = zconf->getValue("zdl.save","extratic");
+			if(zconf->hasValue(launchSection,"extratic")){
+				QString tVal = zconf->getValue(launchSection,"extratic");
 				if(tVal == "1"){
 					args<<"-extratic";
 				}
 			}
-			if(zconf->hasValue("zdl.save","netmode")){
-				QString tVal = zconf->getValue("zdl.save","netmode");
+			if(zconf->hasValue(launchSection,"netmode")){
+				QString tVal = zconf->getValue(launchSection,"netmode");
 				if(tVal != "-1"){
 					args<<"-netmode"<<tVal;
 				}
 			}
-			if(zconf->hasValue("zdl.save","dup")){
-				QString tVal = zconf->getValue("zdl.save","dup");
+			if(zconf->hasValue(launchSection,"dup")){
+				QString tVal = zconf->getValue(launchSection,"dup");
 				if(tVal != "0"){
 					args<<"-dup"<<tVal;
 				}
 			}
-			if(zconf->hasValue("zdl.save","savegame")){
-				args<<"-loadgame"<<zconf->getValue("zdl.save","savegame");
+			if(zconf->hasValue(launchSection,"savegame")){
+				args<<"-loadgame"<<zconf->getValue(launchSection,"savegame");
 			}
 		}
 	}
+
+	appendUserParams(args);
+
+	LOGDATAO() << "args: " << args << Qt::endl;
+	return args;
+}
+
+//The port's own parameters go first: they are that port's defaults, and
+//the global and per-launch ones below are the user's overrides.
+void ZDLMainWindow::appendUserParams(QStringList &args)
+{
+	ZDLConf *zconf = ZDLConfigurationManager::getActiveConfiguration();
 
 	QString portParams = getPortParams();
 	if (!portParams.isEmpty()){
@@ -887,12 +1042,14 @@ QStringList ZDLMainWindow::getArgumentsList()
 		args<<ParseParams(zconf->getValue("zdl.general", "alwaysadd"));
 	}
 
-	if (zconf->hasValue("zdl.save", "extra")){
-		args<<ParseParams(zconf->getValue("zdl.save", "extra"));
+	if (zconf->hasValue(launchSection, "extra")){
+		args<<ParseParams(zconf->getValue(launchSection, "extra"));
 	}
+}
 
-	LOGDATAO() << "args: " << args << Qt::endl;
-	return args;
+void ZDLMainWindow::appendUserParams(QString &args)
+{
+	Q_UNUSED(args);
 }
 
 QString ZDLMainWindow::getArgumentsString(bool native_sep)
@@ -920,7 +1077,7 @@ QString ZDLMainWindow::getArgumentsString(bool native_sep)
 //Same lookup as getExecutable, reading p<N>p instead of p<N>f.
 QString ZDLMainWindow::getPortParams(){
 	ZDLConf *zconf = ZDLConfigurationManager::getActiveConfiguration();
-	if(!zconf||!zconf->hasValue("zdl.save", "port"))
+	if(!zconf||!zconf->hasValue(launchSection, "port"))
 		return QString();
 
 	ZDLSection *section = zconf->getSection("zdl.ports");
@@ -928,7 +1085,7 @@ QString ZDLMainWindow::getPortParams(){
 		return QString();
 
 	int stat;
-	QString portName = zconf->getValue("zdl.save", "port", &stat);
+	QString portName = zconf->getValue(launchSection, "port", &stat);
 	QVector<ZDLLine*> nameVctr;
 	section->getRegex("^p[0-9]+n$", nameVctr);
 
@@ -947,13 +1104,23 @@ QString ZDLMainWindow::getPortParams(){
 }
 
 QString ZDLMainWindow::getExecutable(){
+	return getExecutable(launchSection);
+}
+
+QString ZDLMainWindow::getExecutable(const QString &launch){
 	LOGDATAO() << "Getting exec" << Qt::endl;
 	ZDLConf *zconf = ZDLConfigurationManager::getActiveConfiguration();
 	int stat;
 	QString portName = "";
-	if(zconf->hasValue("zdl.save", "port")){
+	if(zconf->hasValue(launch, "port")){
 		ZDLSection *section = zconf->getSection("zdl.ports");
-		portName = zconf->getValue("zdl.save", "port", &stat);
+		//A preset can name a port in a configuration that has no port list
+		//at all, and then there is nothing to look it up in.
+		if (!section){
+			LOGDATAO() << "No port list" << Qt::endl;
+			return QString("");
+		}
+		portName = zconf->getValue(launch, "port", &stat);
 		QVector<ZDLLine*> fileVctr;
 		section->getRegex("^p[0-9]+n$", fileVctr);
 
@@ -979,11 +1146,42 @@ QString ZDLMainWindow::getExecutable(){
 }
 
 
+//Before the Build Engine tab, Build games were started from the one launch
+//configuration the Doom Engine tab now has to itself. A Build port left
+//there, with the game, files and choices that go with it, moves once to the
+//Build Engine tab's own configuration, before the Doom Engine tab, which
+//no longer lists Build ports, drops them on reading.
+static void MoveBuildLaunch(ZDLConf *zconf)
+{
+	if (!zconf||zconf->getSection(ZDLLaunchFiles::BUILD_SECTION))
+		return;
+	ZDLSection *section=zconf->getSection(ZDLLaunchFiles::LAUNCH_SECTION);
+	if (!section||!ZDLBuildArgs::isBuildLaunch(zconf, ZDLLaunchFiles::LAUNCH_SECTION))
+		return;
+
+	QVector<ZDLLine*> lines;
+	section->getRegex("^(port|iwad|skill|warp|respawn|savedir|config|extra|file[0-9]+d?)$", lines);
+	QList<QPair<QString, QString> > moved;
+	foreach (ZDLLine *line, lines)
+		moved<<qMakePair(line->getVariable(), line->getValue());
+	for (int i=0; i<moved.size(); i++) {
+		zconf->setValue(ZDLLaunchFiles::BUILD_SECTION, moved[i].first, moved[i].second);
+		zconf->deleteValue(ZDLLaunchFiles::LAUNCH_SECTION, moved[i].first);
+	}
+}
+
+void ZDLMainWindow::setLaunchSection(const QString &section){
+	launchSection = section.isEmpty() ? QString(ZDLLaunchFiles::LAUNCH_SECTION) : section;
+}
+
 //Pass through functions.
 void ZDLMainWindow::startRead(){
 	LOGDATAO() << "Starting to read configuration" << Qt::endl;
+	MoveBuildLaunch(ZDLConfigurationManager::getActiveConfiguration());
 	intr->startRead();
+	buildTab->startRead();
 	settings->startRead();
+	appSettings->newConfig();
 	idgames->newConfig();
 	QString windowTitle = getWindowTitle();
 	setWindowTitle(windowTitle);
@@ -992,6 +1190,13 @@ void ZDLMainWindow::startRead(){
 void ZDLMainWindow::writeConfig(){
 	LOGDATAO() << "Writing configuration" << Qt::endl;
 	intr->writeConfig();
+	buildTab->writeConfig();
 	settings->writeConfig();
+	appSettings->rebuild();
 	idgames->rebuild();
+}
+
+bool ZDLMainWindow::saveNow(){
+	writeConfig();
+	return ZDLConfigurationManager::writeConfigFile() == 0;
 }

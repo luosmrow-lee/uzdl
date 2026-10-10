@@ -18,12 +18,22 @@
  */
 
 #include <QFile>
+#include <QDir>
+#include <QSet>
+#include <QProcess>
+#include <QStandardPaths>
+#include <QRegularExpression>
 #include <QCryptographicHash>
 #include <QtAlgorithms>
 #include <algorithm>
 #include <cstring>
 #include "ZDLFileInfo.h"
 #include "ZDLMapFile.h"
+#include "miniz.h"
+
+#if defined(Q_OS_WIN)
+#include <windows.h>
+#endif
 
 //qBinaryFind was removed in Qt 6. std::lower_bound finds the insertion
 //point rather than a match, so the result still has to be checked for
@@ -199,6 +209,7 @@ const FileDesc sorted_iwad_files[]={
 //Original unsorted list, that is easier to manage, is provided in comments at the bottom of this source file
 const FileDesc sorted_source_ports[]={
 	{"boom", "Boom"},
+	{"cherry-doom", "Cherry Doom"},
 	{"chocolate-doom", "Chocolate Doom"},
 	{"chocolate-heretic", "Chocolate Heretic"},
 	{"chocolate-hexen", "Chocolate Hexen"},
@@ -222,18 +233,22 @@ const FileDesc sorted_source_ports[]={
 	{"doomsday", "Doomsday Engine"},
 	{"doomsday-server", "Doomsday Engine (Server)"},
 	{"dosdoom", "DOSDoom"},
+	{"dsda-doom", "DSDA-Doom"},
 	{"edge", "EDGE"},
+	{"eduke32", "EDuke32"},
 	{"eternity", "Eternity Engine"},
 	{"glboom", "PrBoom (OpenGL)"},
 	{"glboom-plus", "PrBoom+ (OpenGL)"},
 	{"gldoom", "GLDoom"},
 	{"gzdoom", "GZDoom"},
+	{"helion", "Helion"},
 	{"heretic", "Heretic"},
 	{"hexen", "Hexen"},
 	{"hexendk", "Hexen: Deathkings of the Dark Citadel"},
 	{"jdoom", "jDoom (Doom)"},
 	{"jheretic", "jDoom (Heretic)"},
 	{"jhexen", "jDoom (Hexen)"},
+	{"k8vavoom", "k8vavoom"},
 	{"linuxsdoom", "Linux Doom (SVGAlib)"},
 	{"linuxxdoom", "Linux Doom (X)"},
 	{"lxdoom", "LxDoom"},
@@ -242,13 +257,18 @@ const FileDesc sorted_source_ports[]={
 	{"mbf", "Marine's Best Friend (MBF)"},
 	{"mochadoom", "Mocha Doom"},
 	{"mochadoom7", "Mocha Doom (Win 7)"},
+	{"nblood", "NBlood"},
+	{"nugget-doom", "Nugget Doom"},
 	{"odamex", "Odamex"},
 	{"odasrv", "Odamex (Server)"},
+	{"pcexhumed", "PCExhumed"},
 	{"prboom", "PrBoom"},
 	{"prboom_server", "PrBoom (Server)"},
 	{"prboom-plus", "PrBoom+"},
 	{"prboom-plus_server", "PrBoom+ (Server)"},
 	{"qzdoom", "QZDoom"},
+	{"raze", "Raze"},
+	{"rednukem", "Rednukem"},
 	{"remood", "ReMooD"},
 	{"risen3d", "Risen3D"},
 	{"skulltag", "Skulltag"},
@@ -258,11 +278,15 @@ const FileDesc sorted_source_ports[]={
 	{"strife", "Strife (Shareware)"},
 	{"strife1", "Strife"},
 	{"tasdoom", "TASDoom"},
+	{"uzdoom", "UZDoom"},
 	{"vavoom", "Vavoom"},
 	{"vavoom-dedicated", "Vavoom (Server)"},
+	{"vkdoom", "VKDoom"},
+	{"voidsw", "VoidSW"},
 	{"wdmp", "WDMP"},
 	{"wdmp32s", "WDMP (Win32s)"},
 	{"windoom", "WinDoom"},
+	{"woof", "Woof!"},
 	{"zandronum", "Zandronum"},
 	{"zdaemon", "ZDaemon"},
 	{"zdaemongl", "ZDaemonGL"},
@@ -281,6 +305,180 @@ bool FileDescCompare(const FileDesc &left, const FileDesc &right)
 {
 	return strcmp(left.file, right.file)<0;
 }
+
+//The ZDoom ports' own identification rules, from GZDoom's iwadinfo.txt: a
+//file holding every lump listed is that IWAD. They are tried in this
+//order, the most particular first, because Doom II asks for MAP01 alone
+//and Doom Shareware for E1M1 alone; anything else with those would pass
+//for them. Names follow the hash and file-name tables above.
+struct IwadSignature {
+	const char *name;
+	const char *lumps;
+};
+
+#define DOOM_REGISTERED_LUMPS "E1M1 E2M1 E2M2 E2M3 E2M4 E2M5 E2M6 E2M7 E2M8 E2M9 E3M1 E3M2 E3M3 E3M4 E3M5 E3M6 E3M7 E3M8 E3M9 DPHOOF BFGGA0 HEADA1 CYBRA1 SPIDA1D1"
+#define DOOM_ULTIMATE_LUMPS DOOM_REGISTERED_LUMPS " E4M2"
+
+const IwadSignature iwad_signatures[]={
+	{"Rise Of The Wool Ball", "E3M6 B3DED WORLDMAP NUCLSKYM PLANETLE MEOWZEKI ZEKIINTR NOWAYBAC"},
+	{"Delaweare", "TITLEMAP ROVEA0 GRLURD01 SQOUI01"},
+	{"The Adventures of Square", "SQU-IWAD E1A1"},
+	{"The Adventures of Square (Square-ware)", "SQU-SWE1 E1A1"},
+	{"Harmony", "MAP01 0HAWK01 0CARA3 0NOSE1"},
+	{"HacX 2.0", "MAP01 HACX-E"},
+	{"HacX: Twitch'n Kill", "MAP01 HACX-R"},
+	{"Action Doom 2: Urban Brawl", "MAP01 AD2LIB"},
+	{"Chex Quest 3", "E1M1 CYCLA1 FLMBA1 MAPINFO"},
+	{"Chex Quest", "E1M1 E4M1 W94_1 POSSH0M0"},
+	{"Strife: Veteran Edition", "MAP35 I_RELB FXAA_F"},
+	{"Strife Registered", "MAP01 MAP33 ENDSTRF"},
+	{"Strife Shareware (new teaser)", "MAP33 ENDSTRF INVCURS"},
+	{"Strife Shareware (old teaser)", "MAP33 ENDSTRF"},
+	{"Hexen Registered", "TITLE MAP01 MAP40 WINNOWR"},
+	{"Hexen: Deathkings of the Dark Citadel", "TITLE MAP60 CLUS1MSG"},
+	{"Hexen Shareware", "TITLE MAP01 WINNOWR"},
+	{"Blasphemer", "E1M1 E2M1 TITLE BLASPHEM"},
+	{"Heretic: Shadow of the Serpent Riders", "E1M1 E2M1 TITLE MUS_E1M1 EXTENDED"},
+	{"Heretic Registered", "E1M1 E2M1 TITLE MUS_E1M1"},
+	{"Heretic Shareware", "E1M1 TITLE MUS_E1M1"},
+	{"FreeDM", "MAP01 FREEDM"},
+	{"Freedoom: Phase 2", "MAP01 FREEDOOM"},
+	{"Freedoom: Phase 1", "E1M1 E2M1 E3M1 FREEDOOM"},
+	{"Freedoom: Demo Version", "E1M1 FREEDOOM"},
+	{"The Ultimate Doom (BFG Edition)", DOOM_ULTIMATE_LUMPS " DMENUPIC M_ACPT M_CAN M_EXITO M_CHG"},
+	{"The Ultimate Doom (KEX Edition)", DOOM_ULTIMATE_LUMPS " DMENUPIC GAMECONF"},
+	{"The Ultimate Doom (Unity Edition)", DOOM_ULTIMATE_LUMPS " DMENUPIC"},
+	{"DOOM Complete (WADSmoosh)", "SMOOSHED ANIMDEFS LANGUAGE MAPINFO ENDOOM M_DOOM TITLEPIC TEXTURES"},
+	{"The Ultimate Doom (Xbox Edition)", DOOM_ULTIMATE_LUMPS " E1M10 SEWERS"},
+	{"The Ultimate Doom", DOOM_ULTIMATE_LUMPS},
+	{"Doom Registered", DOOM_REGISTERED_LUMPS},
+	{"Doom Shareware", "E1M1"},
+	{"Final Doom: TNT Evilution (Unity Edition)", "MAP01 REDTNT2 DMAPINFO"},
+	{"Final Doom: TNT Evilution (KEX Edition)", "MAP01 REDTNT2 GAMECONF"},
+	{"Final Doom: TNT Evilution", "MAP01 REDTNT2"},
+	{"Final Doom: The Plutonia Experiment (Unity Edition)", "MAP01 CAMO1 DMAPINFO"},
+	{"Final Doom: The Plutonia Experiment (KEX Edition)", "MAP01 CAMO1 GAMECONF"},
+	{"Final Doom: The Plutonia Experiment", "MAP01 CAMO1"},
+	{"Doom II: Hell on Earth (BFG Edition)", "MAP01 DMENUPIC M_ACPT M_CAN M_EXITO M_CHG"},
+	{"Doom II: Hell on Earth (KEX Edition)", "MAP01 DMENUPIC GAMECONF"},
+	{"Doom II: Hell on Earth (Unity Edition)", "MAP01 DMENUPIC"},
+	{"Doom II: Hell on Earth (Xbox Edition)", "MAP01 MAP33 CWILV32"},
+	{"Doom II: Hell on Earth (French release)", "MAP01 WIOBJ"},
+	{"Doom II: Hell on Earth", "MAP01"}
+};
+
+#define IWAD_SIGNATURES_SIZE	(sizeof(iwad_signatures)/sizeof(IwadSignature))
+
+//The first rule every lump of which the file has.
+static QString SignatureName(const QStringList &lumps)
+{
+	QSet<QString> have(lumps.begin(), lumps.end());
+
+	for (size_t i=0; i<IWAD_SIGNATURES_SIZE; i++) {
+		bool all=true;
+		foreach (const QString &lump, QString(iwad_signatures[i].lumps).split(' ', Qt::SkipEmptyParts)) {
+			if (!have.contains(lump)) {
+				all=false;
+				break;
+			}
+		}
+		if (all)
+			return iwad_signatures[i].name;
+	}
+
+	return QString();
+}
+
+//"g4.14.2-40-gabcdef", "v7.1.0" and "4.14.2.0" all mean 4.14.2: the first
+//run of dotted numbers, without a fourth part that is only a zero.
+static QString CleanVersion(const QString &raw)
+{
+	QRegularExpressionMatch m=QRegularExpression("(\\d+(?:\\.\\d+)+)").match(raw);
+	if (!m.hasMatch())
+		return QString();
+
+	QStringList parts=m.captured(1).split('.');
+	while (parts.size()>3&&parts.last()=="0")
+		parts.removeLast();
+	return parts.join('.');
+}
+
+//What the port table is looked up with: the file name in lower case with
+//its extension, a version or platform tacked on to it, and a Flatpak
+//prefix taken away, so that gzdoom-4.14.2-x86_64.AppImage and
+//org.zdoom.GZDoom both come out as gzdoom.
+static QString PortKey(const QString &fileName)
+{
+	QString key=fileName.toLower();
+	key.remove(QRegularExpression("\\.(exe|appimage|sh)$"));
+	int dot=key.lastIndexOf('.');
+	if (dot>0&&QRegularExpression("^[a-z0-9_]+(\\.[a-z0-9_-]+)+$").match(key).hasMatch())
+		key=key.mid(dot+1);
+	key.remove(QRegularExpression("[-_](x86_64|x64|amd64|i386|win64|win32|linux)$"));
+	key.remove(QRegularExpression("[-_]v?\\d+(\\.\\d+)*.*$"));
+	return key;
+}
+
+#if defined(Q_OS_WIN)
+
+struct Translation {
+	WORD language;
+	WORD codepage;
+};
+
+//One string of the version block, in the first language it is stored in.
+static bool ReadVersionField(const QString &file, const wchar_t *field, QString &value)
+{
+	QString native=QDir::toNativeSeparators(file);
+	const wchar_t *path=reinterpret_cast<const wchar_t*>(native.utf16());
+
+	DWORD handle=0;
+	DWORD size=GetFileVersionInfoSizeW(path, &handle);
+	if (!size)
+		return false;
+
+	QByteArray block(size, 0);
+	if (!GetFileVersionInfoW(path, 0, size, block.data()))
+		return false;
+
+	Translation *translation=NULL;
+	UINT length=0;
+	if (!VerQueryValueW(block.data(), L"\\VarFileInfo\\Translation", (LPVOID*)&translation, &length)||length<sizeof(Translation))
+		return false;
+
+	QString key=QString("\\StringFileInfo\\%1%2\\").arg(translation->language, 4, 16, QChar('0')).arg(translation->codepage, 4, 16, QChar('0'))+QString::fromWCharArray(field);
+	wchar_t *text=NULL;
+	if (!VerQueryValueW(block.data(), reinterpret_cast<const wchar_t*>(key.utf16()), (LPVOID*)&text, &length)||!text||!length)
+		return false;
+
+	value=QString::fromWCharArray(text).trimmed();
+	return !value.isEmpty();
+}
+
+#else
+
+//Runs a tool that may not be installed and picks one thing out of what it
+//prints. Bounded: a package manager waiting on a lock must not hang uZDL.
+static QString RunForVersion(const QString &program, const QStringList &args, const QString &pattern)
+{
+	QString exe=QStandardPaths::findExecutable(program);
+	if (exe.isEmpty())
+		return QString();
+
+	QProcess proc;
+	proc.start(exe, args);
+	if (!proc.waitForFinished(3000)) {
+		proc.kill();
+		return QString();
+	}
+	if (proc.exitCode()!=0)
+		return QString();
+
+	QRegularExpressionMatch m=QRegularExpression(pattern, QRegularExpression::MultilineOption).match(QString::fromUtf8(proc.readAllStandardOutput()));
+	return m.hasMatch()?m.captured(1):QString();
+}
+
+#endif
 
 ZDLFileInfo::ZDLFileInfo():
 	QFileInfo()
@@ -303,50 +501,263 @@ ZDLIwadInfo::ZDLIwadInfo(const QString &file):
 	ZDLFileInfo(file)
 {}
 
-QString ZDLIwadInfo::GetFileDescription()
+//Everything the file can tell, worked out once per file. setFile can point
+//the object elsewhere afterwards, which the stored path catches.
+void ZDLIwadInfo::Scan()
 {
-	QString iwad_name;
+	if (scannedPath==filePath())
+		return;
+
+	scannedPath=filePath();
+	identified.clear();
+	how.clear();
+	digest.clear();
+	build=ZDLBuildGames::Match();
+
+	//A game of the Build engine is told by its size and CRC32, so for a
+	//file of a size the table knows the CRC is taken in the same pass as
+	//the MD5.
+	QFileInfo fi(filePath());
+	bool wantCrc=fi.isFile()&&ZDLBuildGames::sizeKnown(fi.size(), fi.absolutePath());
+	mz_ulong crc=MZ_CRC32_INIT;
 
 	QFile iwad_file(filePath());
 	if (iwad_file.open(QFile::ReadOnly)) {
 		QCryptographicHash file_hash(QCryptographicHash::Md5);
-		char buffer[1024];
-		int length;
+		char buffer[65536];
+		qint64 length;
 
-		while ((length=iwad_file.read(buffer, sizeof(buffer)))>0)
-			file_hash.addData(buffer, length);
+		while ((length=iwad_file.read(buffer, sizeof(buffer)))>0) {
+			file_hash.addData(QByteArrayView(buffer, length));
+			if (wantCrc)
+				crc=mz_crc32(crc, reinterpret_cast<const unsigned char*>(buffer), size_t(length));
+		}
 
 		if (iwad_file.atEnd()) {
+			digest=file_hash.result();
+
 			IwadHash target_hash;
-			memcpy(target_hash.md5, file_hash.result().data(), 16);
+			memcpy(target_hash.md5, digest.constData(), 16);
 
 			const IwadHash *null_iwad=sorted_iwad_hashes+SORTED_IWAD_HASHES_SIZE;
 			const IwadHash *found_iwad=BinaryFind(sorted_iwad_hashes, null_iwad, target_hash, IwadHashCompare);
 
-			if (found_iwad!=null_iwad)
-				iwad_name=found_iwad->name;
+			if (found_iwad!=null_iwad) {
+				identified=found_iwad->name;
+				how="the exact release, by its MD5";
+			} else if (wantCrc) {
+				build=ZDLBuildGames::bySizeCrc(fi.size(), quint32(crc), fi.absolutePath());
+				if (build.valid()) {
+					identified=build.name;
+					how=build.how;
+				}
+			}
 		}
 
 		iwad_file.close();
 	}
 
-	ZDLMapFile *mapfile;
-	if (iwad_name.isEmpty()&&(mapfile=ZDLMapFile::getMapFile(filePath()))) {
-		iwad_name=mapfile->getIwadinfoName();
-		delete mapfile;
+	//By contents next: what the file says of itself, then what it holds.
+	//A modified or re-released IWAD has no hash in the table but the same
+	//lumps as ever.
+	if (identified.isEmpty()) {
+		if (ZDLMapFile *mapfile=ZDLMapFile::getMapFile(filePath())) {
+			identified=mapfile->getIwadinfoName();
+			if (!identified.isEmpty()) {
+				how="its own IWADINFO lump";
+			} else {
+				identified=SignatureName(mapfile->getLumpNames());
+				if (!identified.isEmpty())
+					how="the lumps it holds, by the ZDoom ports' rules";
+			}
+			delete mapfile;
+		}
 	}
 
-	if (iwad_name.isEmpty()) {
+	//A zip may be a Build add-on, told by the files in it.
+	if (identified.isEmpty()&&fi.isFile()) {
+		build=ZDLBuildGames::byContents(filePath());
+		if (build.valid()) {
+			identified=build.name;
+			how=build.how;
+		}
+	}
+
+	if (identified.isEmpty()) {
 		QByteArray file_buf=fileName().toLower().toLocal8Bit();
-		const FileDesc target_file={file_buf.constData()};
+		const FileDesc target_file={file_buf.constData(), NULL};
 		const FileDesc *null_iwad=sorted_iwad_files+SORTED_IWAD_FILES_SIZE;
 		const FileDesc *found_iwad=BinaryFind(sorted_iwad_files, null_iwad, target_file, FileDescCompare);
 
-		if (found_iwad!=null_iwad)
-			iwad_name=found_iwad->name;
+		if (found_iwad!=null_iwad) {
+			identified=found_iwad->name;
+			how="its file name alone";
+		}
 	}
 
-	return iwad_name.isEmpty()?fileName().toUpper():iwad_name;
+	//An add-on of loose files in its base game's folder, Route 66 or
+	//Cryptic Passage, told by its script with the add-on's files beside
+	//it; before the names alone, which say less.
+	if (identified.isEmpty()&&fi.isFile()) {
+		build=ZDLBuildGames::byLooseFiles(filePath());
+		if (build.valid()) {
+			identified=build.name;
+			how=build.how;
+		}
+	}
+
+	//An add-on of Blood's, by the INI that defines its episodes.
+	if (identified.isEmpty()&&fi.isFile()&&fi.suffix().compare("ini", Qt::CaseInsensitive)==0) {
+		build=ZDLBuildGames::byBloodIni(filePath());
+		if (build.valid()) {
+			identified=build.name;
+			how=build.how;
+		}
+	}
+
+	if (identified.isEmpty()&&fi.isFile()) {
+		build=ZDLBuildGames::byName(filePath());
+		if (build.valid()) {
+			identified=build.name;
+			how=build.how;
+		}
+	}
+
+	//An add-on in a GRP or a zip that no table knows, named after the
+	//episodes its own scripts define.
+	if (identified.isEmpty()&&fi.isFile()&&(fi.suffix().compare("grp", Qt::CaseInsensitive)==0||fi.suffix().compare("zip", Qt::CaseInsensitive)==0)) {
+		build=ZDLBuildGames::byScripts(filePath());
+		if (build.valid()) {
+			identified=build.name;
+			how=build.how;
+		}
+	}
+
+	//The games that are a folder of loose files: told by the folder, for the
+	//folder itself and for the game's own files in it.
+	if (identified.isEmpty()) {
+		build=ZDLBuildGames::byFolder(filePath());
+		if (build.valid()) {
+			identified=build.name;
+			how=build.how;
+		}
+	}
+
+	//Last, a mod of loose files over Duke Nukem 3D, told by its main script
+	//and named after the episodes its scripts define.
+	if (identified.isEmpty()&&fi.isFile()&&fi.suffix().compare("con", Qt::CaseInsensitive)==0) {
+		build=ZDLBuildGames::byModScripts(filePath());
+		if (build.valid()) {
+			identified=build.name;
+			how=build.how;
+		}
+	}
+}
+
+QString ZDLIwadInfo::IdentifiedBy()
+{
+	Scan();
+	return how;
+}
+
+const ZDLBuildGames::Match &ZDLIwadInfo::BuildMatch()
+{
+	Scan();
+	return build;
+}
+
+QString ZDLIwadInfo::Identify()
+{
+	Scan();
+	return identified;
+}
+
+//Whether the file name is one the IWAD table knows, doom2.wad or square.pk3.
+static bool KnownIwadName(const QString &fileName)
+{
+	QByteArray file_buf=fileName.toLower().toLocal8Bit();
+	const FileDesc target_file={file_buf.constData(), NULL};
+	const FileDesc *null_iwad=sorted_iwad_files+SORTED_IWAD_FILES_SIZE;
+	return BinaryFind(sorted_iwad_files, null_iwad, target_file, FileDescCompare)!=null_iwad;
+}
+
+bool ZDLIwadInfo::LooksLikeIwad(const QString &file)
+{
+	QFileInfo fi(file);
+	QString ext=fi.suffix().toLower();
+
+	//A Build game is told by its size and CRC32, or for a few by name: a
+	//size the table knows, or such a name, is enough to read it through.
+	//So is a file of a game that is a folder of loose files, and a GRP or
+	//zip of an add-on told by what it holds or by the episodes its scripts
+	//name; no other zip is taken for a game.
+	if (ext=="con"||ext=="ini")
+		return ZDLBuildGames::byLooseFiles(file).valid()||(ext=="con"&&ZDLBuildGames::byModScripts(file).valid())||(ext=="ini"&&ZDLBuildGames::byBloodIni(file).valid());
+	if (ZDLBuildGames::isCandidate(ext)||ext=="zip") {
+		if (ZDLBuildGames::isCandidate(ext)&&(ZDLBuildGames::sizeKnown(fi.size(), fi.absolutePath())||ZDLBuildGames::byName(file).valid()))
+			return true;
+		if (ZDLBuildGames::byFolder(file).valid())
+			return true;
+		return (ext=="grp"||ext=="zip")&&(ZDLBuildGames::byContents(file).valid()||ZDLBuildGames::byScripts(file).valid());
+	}
+
+	//A .wad has to say IWAD in its header. The rules alone would take any
+	//PWAD with a MAP01 for Doom II, and the re-releases ship several of
+	//those beside the real thing: nerve.wad, id1.wad, the Master Levels.
+	if (ext=="wad") {
+		QFile wad(file);
+		char magic[4]={0, 0, 0, 0};
+		if (!wad.open(QIODevice::ReadOnly)||wad.read(magic, 4)!=4||memcmp(magic, "IWAD", 4))
+			return false;
+	}
+
+	ZDLMapFile *mapfile=ZDLMapFile::getMapFile(file);
+	if (!mapfile)
+		return ext=="pk7"&&KnownIwadName(fi.fileName());
+
+	bool describesItself=!mapfile->getIwadinfoName().isEmpty();
+	bool looks=describesItself;
+
+	//A plain .pk3 is only an IWAD when it says so or carries a known name:
+	//the ports' own gzdoom.pk3 and game_support.pk3 hold the support files
+	//for every game the rules name, and a mod's pk3 has a MAP01 like any
+	//other. This is the ports' own restriction, and it costs nothing.
+	if (!looks&&(ext!="pk3"||KnownIwadName(fi.fileName())))
+		looks=!SignatureName(mapfile->getLumpNames()).isEmpty();
+
+	delete mapfile;
+	return looks;
+}
+
+QByteArray ZDLIwadInfo::Digest()
+{
+	Scan();
+	return digest;
+}
+
+QString ZDLIwadInfo::Family()
+{
+	QString name=Identify();
+
+	if (name.isEmpty())
+		return "Other";
+	if (build.valid())
+		return build.family;
+	if (name.contains("Heretic", Qt::CaseInsensitive)||name.contains("Blasphemer", Qt::CaseInsensitive))
+		return "Heretic";
+	if (name.contains("Hexen", Qt::CaseInsensitive))
+		return "Hexen";
+	if (name.contains("Strife", Qt::CaseInsensitive))
+		return "Strife";
+	if (name.contains("Chex", Qt::CaseInsensitive))
+		return "Chex";
+	return "Doom";
+}
+
+QString ZDLIwadInfo::GetFileDescription()
+{
+	QString name=Identify();
+	return name.isEmpty()?fileName().toUpper():name;
 }
 
 ZDLAppInfo::ZDLAppInfo():
@@ -357,17 +768,109 @@ ZDLAppInfo::ZDLAppInfo(const QString &file):
 	ZDLFileInfo(file)
 {}
 
-QString ZDLAppInfo::GetFileDescription()
+QString ZDLAppInfo::VersionField(const QString &field)
 {
-	QByteArray file_buf=baseName().toLower().toLocal8Bit();
-	const FileDesc target_file={file_buf.constData()};
+	QString value;
+#if defined(Q_OS_WIN)
+	ReadVersionField(filePath(), reinterpret_cast<const wchar_t*>(field.utf16()), value);
+#else
+	Q_UNUSED(field);
+#endif
+	return value;
+}
+
+bool ZDLAppInfo::IsKnownPort()
+{
+	QByteArray file_buf=PortKey(fileName()).toLocal8Bit();
+	const FileDesc target_file={file_buf.constData(), NULL};
+	const FileDesc *null_port=sorted_source_ports+SORTED_SOURCE_PORTS_SIZE;
+	return BinaryFind(sorted_source_ports, null_port, target_file, FileDescCompare)!=null_port;
+}
+
+QString ZDLAppInfo::GetProductName()
+{
+	//The table's name first: it is the one people know the port by, where
+	//the executable may call itself "Odamex Client" or, in Vavoom's case,
+	//spell out a whole sentence. The executable's own name is for ports
+	//the table has not heard of.
+	QByteArray file_buf=PortKey(fileName()).toLocal8Bit();
+	const FileDesc target_file={file_buf.constData(), NULL};
 	const FileDesc *null_port=sorted_source_ports+SORTED_SOURCE_PORTS_SIZE;
 	const FileDesc *found_port=BinaryFind(sorted_source_ports, null_port, target_file, FileDescCompare);
-
 	if (found_port!=null_port)
 		return found_port->name;
-	else
-		return baseName();
+
+#if defined(Q_OS_WIN)
+	QString product;
+	if (ReadVersionField(filePath(), L"ProductName", product))
+		return product;
+	//Some ports fill only the description, as "GZDoom g4.14.2": the name is
+	//what stands before the version.
+	if (ReadVersionField(filePath(), L"FileDescription", product)) {
+		QRegularExpressionMatch m=QRegularExpression("^(.*?)\\s+v?g?\\d+(\\.\\d+)+").match(product);
+		return m.hasMatch()?m.captured(1):product;
+	}
+#endif
+
+	return baseName();
+}
+
+QString ZDLAppInfo::GetVersion()
+{
+	QString version;
+
+#if defined(Q_OS_WIN)
+	QString raw;
+	if (ReadVersionField(filePath(), L"ProductVersion", raw)||ReadVersionField(filePath(), L"FileVersion", raw)||ReadVersionField(filePath(), L"FileDescription", raw))
+		version=CleanVersion(raw);
+
+	//A build unpacked by hand usually carries its number in its own name or
+	//its folder's, which is all that is left when the version block has no
+	//number, as DSDA-Doom's and some Eternity builds have.
+	if (version.isEmpty())
+		version=CleanVersion(fileName());
+	if (version.isEmpty())
+		version=CleanVersion(QFileInfo(absolutePath()).fileName());
+
+	return version;
+#else
+	QString path=QDir::toNativeSeparators(absoluteFilePath());
+
+	//A Flatpak's launcher is a link named after the app in an exports/bin
+	//folder; the app knows its version.
+	if (path.contains("/flatpak/exports/bin/"))
+		version=CleanVersion(RunForVersion("flatpak", QStringList()<<"info"<<fileName(), "^\\s*Version:\\s*(\\S+)"));
+
+	//A packaged port: whichever package manager owns the file knows.
+	if (version.isEmpty()&&(path.startsWith("/usr/")||path.startsWith("/bin/")||path.startsWith("/opt/"))) {
+		QString package=RunForVersion("dpkg", QStringList()<<"-S"<<path, "^([^:\\s]+):");
+		if (!package.isEmpty())
+			version=CleanVersion(RunForVersion("dpkg-query", QStringList()<<"-W"<<"-f=${Version}"<<package, "^(\\S+)"));
+		if (version.isEmpty())
+			version=CleanVersion(RunForVersion("rpm", QStringList()<<"-qf"<<"--qf"<<"%{VERSION}"<<path, "^(\\S+)"));
+		if (version.isEmpty())
+			version=CleanVersion(RunForVersion("pacman", QStringList()<<"-Qo"<<path, "owned by \\S+ (\\S+)"));
+	}
+
+	//A build unpacked by hand usually carries its number in its own name or
+	//its folder's: gzdoom-4.14.2-x86_64.AppImage, gzdoom-4.14.2/gzdoom.
+	if (version.isEmpty())
+		version=CleanVersion(fileName());
+	if (version.isEmpty())
+		version=CleanVersion(QFileInfo(absolutePath()).fileName());
+
+	return version;
+#endif
+}
+
+QString ZDLAppInfo::GetFileDescription()
+{
+	QString name=GetProductName();
+	QString version=GetVersion();
+
+	if (version.isEmpty()||name.contains(version))
+		return name;
+	return name+" "+version;
 }
 
 /**********************************************************

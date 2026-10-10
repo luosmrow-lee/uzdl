@@ -24,6 +24,9 @@
 #include "ZDLConfigurationManager.h"
 #include "ZDLNameInput.h"
 #include "ZDLFileInfo.h"
+#include "ZDLFinderDialog.h"
+#include "ZDLFileInspector.h"
+#include "ZDLRazeSetup.h"
 #include "gph_ast.xpm"
 
 #if defined(Q_OS_WIN)
@@ -50,7 +53,38 @@ ZDLSourcePortList::ZDLSourcePortList(ZDLWidget *parent): ZDLListWidget(parent){
 	btnWizardAdd->setToolTip("Add and name item");
 	buttonRow->insertWidget(0, btnWizardAdd);
 
+	QPushButton *btnFind = new QPushButton("Find installed", this);
+	btnFind->setToolTip("Look where source ports get installed or unpacked, and offer what is there");
+	buttonRow->insertWidget(1, btnFind);
+
 	QObject::connect(btnWizardAdd, SIGNAL(clicked()), this, SLOT(wizardAddButton()));
+	QObject::connect(btnFind, SIGNAL(clicked()), this, SLOT(findInstalled()));
+
+	pList->setContextMenuPolicy(Qt::CustomContextMenu);
+	QObject::connect(pList, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(showMenu(QPoint)));
+}
+
+void ZDLSourcePortList::findInstalled(){
+	ZDLFinderDialog::run(this, true, false);
+}
+
+//Right click on a port: its version and what its executable says of itself.
+void ZDLSourcePortList::showMenu(const QPoint &pos){
+	QListWidgetItem *item = pList->itemAt(pos);
+	if (!item)
+		return;
+
+	QString stored = ((ZDLNameListable*)item)->getFile();
+	QMenu menu(this);
+	QAction *info = menu.addAction("Details...");
+	//For a Raze, the setup on demand: again after a no, or after the games
+	//moved.
+	QAction *raze = ZDLRazeSetup::isRaze(ZDLPaths::resolve(stored)) ? menu.addAction("Set up Raze for uZDL...") : NULL;
+	QAction *picked = menu.exec(pList->viewport()->mapToGlobal(pos));
+	if (picked == info)
+		ZDLFileInspector::open(this, ZDLPaths::resolve(stored));
+	else if (raze && picked == raze)
+		ZDLRazeSetup::setUpNow(this, stored);
 }
 
 void ZDLSourcePortList::wizardAddButton(){
@@ -63,6 +97,7 @@ void ZDLSourcePortList::wizardAddButton(){
 		ZDLNameListable *added=new ZDLNameListable(pList, 1001, diag.getFile(), diag.getName());
 		added->setParams(diag.getParams());
 		insert(added, -1);
+		ZDLRazeSetup::offer(this, diag.getFile());
 	}
 }
 
@@ -92,6 +127,16 @@ void ZDLSourcePortList::newConfig(){
 				section->getRegex(QString(number).replace("n$", "p$"), paramVctr);
 				if (paramVctr.size() == 1)
 					zList->setParams(paramVctr[0]->getValue());
+
+#if defined(Q_OS_WIN)
+				//What the executable says of itself, read afresh each time: a
+				//port that updated itself carries its new number by now. Only
+				//here, where reading it costs nothing; elsewhere it may mean
+				//asking the package manager.
+				QString resolved = ZDLPaths::resolve(fileName);
+				QString version = ZDLAppInfo(resolved).GetVersion();
+				zList->setToolTip(QDir::toNativeSeparators(resolved) + (version.isEmpty() ? QString() : " (version " + version + ")"));
+#endif
 
 				insert(zList, -1);
 			}
@@ -123,10 +168,12 @@ void ZDLSourcePortList::rebuild(){
 
 void ZDLSourcePortList::newDrop(QStringList fileList){
 	LOGDATAO() << "newDrop" << Qt::endl;	
-	for (int i=0; i<fileList.size(); i++)
+	for (int i=0; i<fileList.size(); i++) {
 		//Dropped and multi-added files take the dialog's default: relative when
 		//inside the uZDL folder. Edit can turn that off per port.
 		insert(new ZDLNameListable(pList, 1001, ZDLPaths::preferRelative(fileList[i]), ZDLAppInfo(fileList[i]).GetFileDescription()), -1);
+		ZDLRazeSetup::offer(this, fileList[i]);
+	}
 }
 
 
@@ -138,6 +185,7 @@ void ZDLSourcePortList::addButton(){
 		LOGDATAO() << "Adding file " << fileNames[i] << Qt::endl;
 		saveSrcLastDir(fileNames[i]);
 		insert(new ZDLNameListable(pList, 1001, ZDLPaths::preferRelative(QFD_QT_SEP(fileNames[i])), ZDLAppInfo(fileNames[i]).GetFileDescription()), -1);
+		ZDLRazeSetup::offer(this, QFD_QT_SEP(fileNames[i]));
 	}
 }
 
@@ -154,6 +202,7 @@ void ZDLSourcePortList::editButton(QListWidgetItem * item){
 			zitem->setDisplayName(diag.getName());
 			zitem->setFile(diag.getFile());
 			zitem->setParams(diag.getParams());
-		}	
+			ZDLRazeSetup::offer(this, diag.getFile());
+		}
 	}
 }

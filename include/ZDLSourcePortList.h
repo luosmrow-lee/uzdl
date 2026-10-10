@@ -31,6 +31,8 @@ class ZDLSourcePortList : public ZDLListWidget{
 		virtual void newDrop(QStringList fileList);
 	protected slots:
 		void wizardAddButton();
+		void findInstalled();
+		void showMenu(const QPoint &pos);
 };
 
 #endif

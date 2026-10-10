@@ -27,8 +27,13 @@
 
 class ZDLSettingsPane: public ZDLWidget {
 	Q_OBJECT
-public: 
-	ZDLSettingsPane( QWidget *parent=0);
+public:
+	//The pane of a tab's launch configuration, kept in section: the Doom
+	//Engine tab's zdl.save unless given. The Build Engine tab's lists only
+	//the Build engine's ports and games, and leaves out GZDoom's
+	//compatibility modes and fast monsters, which those ports do not have;
+	//the Doom Engine tab's lists the rest.
+	ZDLSettingsPane( QWidget *parent=0, const QString &section=QString(), bool build=false);
 	virtual void rebuild();
 	virtual void newConfig();
 protected slots:
@@ -37,8 +42,28 @@ protected slots:
 	void VerbosePopup();
 	void HidePopup();
 	void runSourcePort();
+	//A port or a game picked here by hand.
+	void portPicked(int);
+	void iwadPicked(int);
+	//The preset's own save folder and settings file no longer used.
+	void dropKeptApart();
 protected:
 	QStringList getFilesMaps();
+	//The row that shows a preset's save folder and settings file while
+	//they apply to the launch.
+	void showKeptApart();
+	QWidget *keptRow;
+	QLabel *keptLabel;
+	QPushButton *keptDrop;
+	//The launch configuration's section, and whether the pane is the Build
+	//Engine tab's.
+	QString launch;
+	bool build;
+	//Set while the configuration is being read in, when the lists change
+	//without anyone picking anything.
+	bool loading;
+	int lastPortIndex;
+	int lastIwadRow;
 	QComboBox *diffList;
 	QComboBox *compatList;
 	QCheckBox *fastCheck;

@@ -30,24 +30,34 @@ ZDLConfiguration::ZDLConfiguration(){
 	//they are vestigial anyway - the per-scope accessors below were never
 	//implemented and all return failure - and keeping them distinct would
 	//only reintroduce a location outside the program directory.
-	QString portable_path=QDir(ZDLPaths::appDir()).filePath(ZDL_PORTABLE_INI);
-	portable=QFile::exists(portable_path);
-
-	if(portable){
-		paths[CONF_SYSTEM] = portable_path;
-		paths[CONF_USER] = portable_path;
-		paths[CONF_FILE] = portable_path;
-	}else{
-		//TODO These need to migrate
-		QSettings system(QSettings::IniFormat,QSettings::SystemScope,"Vectec Software","qZDL",NULL);
-		QSettings user(QSettings::IniFormat,QSettings::UserScope,"Vectec Software","qZDL",NULL);
-		paths[CONF_SYSTEM] = system.fileName();
-		paths[CONF_USER] = user.fileName();
-		paths[CONF_FILE] = "zdl.ini";
-	}
+	setPortable(QFile::exists(portableConfigPath()));
 	confs[CONF_SYSTEM] = new ZDLConf();
 	confs[CONF_USER] = new ZDLConf();
 	confs[CONF_FILE] = new ZDLConf();
+}
+
+QString ZDLConfiguration::portableConfigPath(){
+	return QDir(ZDLPaths::appDir()).filePath(ZDL_PORTABLE_INI);
+}
+
+QString ZDLConfiguration::userConfigPath(){
+	QSettings user(QSettings::IniFormat,QSettings::UserScope,"Vectec Software","qZDL",NULL);
+	return user.fileName();
+}
+
+void ZDLConfiguration::setPortable(bool on){
+	portable=on;
+	if(portable){
+		paths[CONF_SYSTEM] = portableConfigPath();
+		paths[CONF_USER] = portableConfigPath();
+		paths[CONF_FILE] = portableConfigPath();
+	}else{
+		//TODO These need to migrate
+		QSettings system(QSettings::IniFormat,QSettings::SystemScope,"Vectec Software","qZDL",NULL);
+		paths[CONF_SYSTEM] = system.fileName();
+		paths[CONF_USER] = userConfigPath();
+		paths[CONF_FILE] = "zdl.ini";
+	}
 }
 
 bool ZDLConfiguration::isPortable(){

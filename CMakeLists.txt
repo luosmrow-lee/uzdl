@@ -17,7 +17,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(uzdl
-    VERSION 1.0.2
+    VERSION 1.1.0
     DESCRIPTION "Launcher for ZDoom based Doom engine source ports"
     LANGUAGES C CXX)
 
@@ -33,9 +33,18 @@ set(UZDL_HEADERS
     include/ZDLConfiguration.h
     include/ZDLConfigurationManager.h
     include/ZDLFileInfo.h
+    include/ZDLFileInspector.h
     include/ZDLFileList.h
     include/ZDLFileListable.h
     include/ZDLFilePane.h
+    include/ZDLAppSettingsTab.h
+    include/ZDLBuildArgs.h
+    include/ZDLBuildGames.h
+    include/ZDLBuildTab.h
+    include/ZDLFinder.h
+    include/ZDLFinderDialog.h
+    include/ZDLGamePatches.h
+    include/ZDLRazeSetup.h
     include/ZDLIWadList.h
     include/ZDLIdgamesTab.h
     include/ZDLImportDialog.h
@@ -76,9 +85,18 @@ set(UZDL_SOURCES
     src/ZDLConfiguration.cpp
     src/ZDLConfigurationManager.cpp
     src/ZDLFileInfo.cpp
+    src/ZDLFileInspector.cpp
     src/ZDLFileList.cpp
     src/ZDLFileListable.cpp
     src/ZDLFilePane.cpp
+    src/ZDLAppSettingsTab.cpp
+    src/ZDLBuildArgs.cpp
+    src/ZDLBuildGames.cpp
+    src/ZDLBuildTab.cpp
+    src/ZDLFinder.cpp
+    src/ZDLFinderDialog.cpp
+    src/ZDLGamePatches.cpp
+    src/ZDLRazeSetup.cpp
     src/ZDLIWadList.cpp
     src/ZDLIdgamesTab.cpp
     src/ZDLImportDialog.cpp
@@ -155,6 +173,9 @@ if(WIN32)
     # SimpleWFA calls the wide-character registry API directly, matching the
     # Unicode character set the original Visual Studio project used.
     target_compile_definitions(uzdl PRIVATE UNICODE _UNICODE NOMINMAX)
+    # The version block of a source port's executable is read through the
+    # version library, which Qt does not pull in.
+    target_link_libraries(uzdl PRIVATE version)
 else()
     target_compile_definitions(uzdl PRIVATE _ZDL_NO_WFA)
 endif()

@@ -51,6 +51,13 @@ class ZDLConfiguration{
 		//True when uzdl_portable.ini sits next to the executable, in which
 		//case that file is the only configuration read or written.
 		bool isPortable();
+		//The two homes a configuration can have, whichever is in use: the
+		//portable file beside uZDL, and the per-user one.
+		static QString portableConfigPath();
+		static QString userConfigPath();
+		//Points the scopes at the one home or the other. The file itself is
+		//the caller's to write or remove.
+		void setPortable(bool on);
 		ZDLConf* getConf(ConfScope scope);
 		
 		QString getString(QString section, QString key, int *ok,ConfScope scope = NUM_CONFS, ScopeRules rules = SCOPE_ALL);

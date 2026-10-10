@@ -31,7 +31,10 @@
 class ZDLPresetDialog: public QDialog {
 	Q_OBJECT
 	public:
-		ZDLPresetDialog(QWidget *parent, const QString &name, const QString &port, const QString &iwad, const QList<ZDLFileEntry> &entries);
+		//For a preset of the tab whose launch configuration is in section,
+		//the Doom Engine tab's unless given. On the Build Engine tab it
+		//offers that tab's ports, games and mods, and has no PWAD library.
+		ZDLPresetDialog(QWidget *parent, const QString &name, const QString &port, const QString &iwad, const QList<ZDLFileEntry> &entries, const QString &section=QString(), bool build=false);
 
 		QString presetName();
 		//Empty when the preset should not touch the source port.
@@ -70,8 +73,13 @@ class ZDLPresetDialog: public QDialog {
 		QComboBox *iwadBox;
 		QLineEdit *saveDirEdit;
 		QLineEdit *configEdit;
+		//The name the preset had on opening; keeping it is never a clash.
+		QString originalName;
 		QListWidget *fileList;
+		//None on the Build Engine tab.
 		ZDLPwadList *library;
+		QString launch;
+		bool build;
 };
 
 #endif

@@ -26,13 +26,18 @@
 
 class ZDLFilePane: public ZDLWidget{
 Q_OBJECT
-public: 
-	ZDLFilePane( QWidget *parent=0);
+public:
+	//A tab's external file list with its Save as preset button, for the
+	//launch configuration in section, the Doom Engine tab's unless given;
+	//on the Build Engine tab, its mods.
+	ZDLFilePane( QWidget *parent=0, const QString &section=QString(), bool build=false);
 	void rebuild();
 protected slots:
 	void saveAsPreset();
 private:
-	
-	ZDLFileList *fList;	
+
+	ZDLFileList *fList;
+	QString launch;
+	bool build;
 };
 #endif

@@ -28,6 +28,10 @@
 #include "ZDLConfigurationManager.h"
 #include "ZDLSettingsPane.h"
 #include "ZDLMainWindow.h"
+#include "ZDLRazeSetup.h"
+#include "ZDLBuildArgs.h"
+#include "ZDLBuildGames.h"
+#include "ZDLLaunchFiles.h"
 
 extern ZDLMainWindow *mw;
 
@@ -38,8 +42,10 @@ void AlwaysFocusedDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
 	QItemDelegate::paint(painter, new_option, index);
 }
 
-ZDLSettingsPane::ZDLSettingsPane(QWidget *parent):ZDLWidget(parent){
+ZDLSettingsPane::ZDLSettingsPane(QWidget *parent, const QString &launchSection, bool buildEngine):ZDLWidget(parent){
 	LOGDATAO() << "New ZDLSettingsPane" << Qt::endl;
+	launch = launchSection.isEmpty() ? QString(ZDLLaunchFiles::LAUNCH_SECTION) : launchSection;
+	build = buildEngine;
 	QVBoxLayout *box = new QVBoxLayout(this);
 	setContentsMargins(0,0,0,0);
 	layout()->setContentsMargins(0,0,0,0);
@@ -64,7 +70,7 @@ ZDLSettingsPane::ZDLSettingsPane(QWidget *parent):ZDLWidget(parent){
 
 	QObject::connect(btnRunPort, SIGNAL(clicked()), this, SLOT(runSourcePort()));
 
-	box->addWidget(new QLabel("IWAD",this));
+	box->addWidget(new QLabel(build ? "Game" : "IWAD",this));
 
 	IWADList = new DeselectableListWidget(this);
 	IWADList->setItemDelegate(new AlwaysFocusedDelegate());
@@ -121,9 +127,15 @@ ZDLSettingsPane::ZDLSettingsPane(QWidget *parent):ZDLWidget(parent){
 	compatList->addItem("MBF 21 (strict)", 9);
 	compatList->addItem("ZDoom 2.0.63", 4);
 	compatList->setToolTip("Passed as +compatmode: the same choice as GZDoom's compatibility mode menu");
-	compatBox->addWidget(new QLabel("Compatibility",this));
+	QLabel *compatLabel = new QLabel("Compatibility",this);
+	compatBox->addWidget(compatLabel);
 	compatBox->addWidget(compatList);
 	compatBox->setSpacing(2);
+	//GZDoom's compatibility modes mean nothing to the Build engine's ports.
+	if (build){
+		compatLabel->hide();
+		compatList->hide();
+	}
 
 	QHBoxLayout *monsterRow = new QHBoxLayout();
 	fastCheck = new QCheckBox("Fast monsters", this);
@@ -134,7 +146,84 @@ ZDLSettingsPane::ZDLSettingsPane(QWidget *parent):ZDLWidget(parent){
 	monsterRow->addWidget(respawnCheck);
 	monsterRow->addStretch();
 	box->addLayout(monsterRow);
+	//Nor have they fast monsters to switch on; respawning they have, as -t1
+	//in the Duke ports.
+	if (build){
+		fastCheck->hide();
+		respawnCheck->setToolTip("Killed monsters come back: -t1 in EDuke32 and Rednukem");
+	}
+
+	//A preset's own save folder and settings file go with the launch it was
+	//loaded into, and showed nowhere, so they went on applying to every
+	//game started after it. They are shown here while they apply, and
+	//dropped once another port or game is picked by hand.
+	loading=false;
+	lastPortIndex=-1;
+	lastIwadRow=-1;
+	keptRow=new QWidget(this);
+	QHBoxLayout *keptLayout=new QHBoxLayout(keptRow);
+	keptLayout->setContentsMargins(0, 2, 0, 0);
+	keptLabel=new QLabel(keptRow);
+	keptLabel->setWordWrap(true);
+	keptLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+	keptDrop=new QPushButton("Stop using", keptRow);
+	keptDrop->setToolTip("Launch without the preset's save folder and settings file");
+	keptDrop->setSizePolicy(QSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed));
+	keptLayout->addWidget(keptLabel, 1);
+	keptLayout->addWidget(keptDrop, 0, Qt::AlignTop);
+	box->addWidget(keptRow);
+	keptRow->hide();
+	connect(keptDrop, SIGNAL(clicked()), this, SLOT(dropKeptApart()));
+	connect(sourceList, SIGNAL(currentIndexChanged(int)), this, SLOT(portPicked(int)));
+	connect(IWADList, SIGNAL(currentRowChanged(int)), this, SLOT(iwadPicked(int)));
 	LOGDATAO() << "Done" << Qt::endl;
+}
+
+void ZDLSettingsPane::portPicked(int index)
+{
+	if (loading||index==lastPortIndex)
+		return;
+	lastPortIndex=index;
+	dropKeptApart();
+}
+
+void ZDLSettingsPane::iwadPicked(int row)
+{
+	if (loading||row==lastIwadRow)
+		return;
+	lastIwadRow=row;
+	dropKeptApart();
+}
+
+void ZDLSettingsPane::dropKeptApart()
+{
+	if (ZDLConf *zconf=ZDLConfigurationManager::getActiveConfiguration()) {
+		zconf->deleteValue(launch, "savedir");
+		zconf->deleteValue(launch, "config");
+	}
+	showKeptApart();
+}
+
+void ZDLSettingsPane::showKeptApart()
+{
+	//The names on the row, which stays short; the whole paths in its tooltip.
+	ZDLConf *zconf=ZDLConfigurationManager::getActiveConfiguration();
+	QStringList lines, paths;
+	if (zconf&&zconf->hasValue(launch, "savedir")) {
+		QString path=QDir::toNativeSeparators(QDir::cleanPath(ZDLPaths::resolve(zconf->getValue(launch, "savedir"))));
+		lines<<QString("Preset's save folder: %1").arg(QFileInfo(path).fileName());
+		paths<<QString("Save folder: %1").arg(path);
+	}
+	if (zconf&&zconf->hasValue(launch, "config")) {
+		QString path=QDir::toNativeSeparators(QDir::cleanPath(ZDLPaths::resolve(zconf->getValue(launch, "config"))));
+		lines<<QString("Preset's settings file: %1").arg(QFileInfo(path).fileName());
+		paths<<QString("Settings file: %1").arg(path);
+	}
+	keptLabel->setText(lines.join("\n"));
+	keptLabel->setToolTip(paths.join("\n")+"\n\nThe preset loaded last keeps its savegames and settings apart from the port's usual ones. "
+		"They are passed as -savedir and -config, and to the EDuke32 family as -game_dir and -cfg, "
+		"where that folder is also searched for game files. Picking another port or game here stops using them.");
+	keptRow->setVisible(!lines.isEmpty());
 }
 
 void DeselectableListWidget::mousePressEvent(QMouseEvent *event)
@@ -183,10 +272,10 @@ void ZDLSettingsPane::currentRowChanged(int idx){
 
 QStringList ZDLSettingsPane::getFilesMaps(){
 	if (ZDLConf *zconf=ZDLConfigurationManager::getActiveConfiguration()) {
-		if (ZDLSection *section=zconf->getSection("zdl.save")) {
+		if (ZDLSection *files=zconf->getSection(launch)) {
 			QVector<ZDLLine*> vctr;
-			
-			section->getRegex("^file[0-9]+$", vctr);
+
+			files->getRegex("^file[0-9]+$", vctr);
 			if (vctr.size()) {
 				QStringList maps;
 
@@ -310,10 +399,11 @@ void ZDLSettingsPane::reloadMapList(){
 void ZDLSettingsPane::runSourcePort()
 {
 	//The combo box may have moved since the configuration was last written,
-	//and getExecutable resolves the port through zdl.save, so flush first.
+	//and getExecutable resolves the port through the launch configuration,
+	//so flush first.
 	mw->writeConfig();
 
-	QString exec=mw->getExecutable();
+	QString exec=mw->getExecutable(launch);
 	if (exec.isEmpty()) {
 		QMessageBox::warning(this, ZDL_APP_NAME, "Please select a source port.");
 		return;
@@ -325,6 +415,10 @@ void ZDLSettingsPane::runSourcePort()
 		return;
 	}
 
+	//UZDL_DIR for the port to inherit, and a Raze's search list brought up
+	//to date, as for a launch.
+	ZDLRazeSetup::prepareLaunch(ZDLConfigurationManager::getActiveConfiguration(), exec_fi.absoluteFilePath(), launch);
+
 	//Deliberately no arguments: started bare, a port shows its own front end
 	//or updater rather than jumping straight into a game.
 	if (!QProcess::startDetached(exec_fi.absoluteFilePath(), QStringList(), exec_fi.absolutePath()))
@@ -335,106 +429,66 @@ void ZDLSettingsPane::rebuild(){
 	LOGDATAO() << "Saving config" << Qt::endl;
 	ZDLConf *zconf = ZDLConfigurationManager::getActiveConfiguration();
 	if(diffList->currentIndex() > 0){
-		zconf->setValue("zdl.save", "skill", diffList->currentIndex());
+		zconf->setValue(launch, "skill", diffList->currentIndex());
 	}else{
-		zconf->deleteValue("zdl.save", "skill");
+		zconf->deleteValue(launch, "skill");
 	}
 
 	if(!warpCombo->currentText().isEmpty()){
-		zconf->setValue("zdl.save", "warp", warpCombo->currentText());
+		zconf->setValue(launch, "warp", warpCombo->currentText());
 	}else{
-		zconf->deleteValue("zdl.save", "warp");
+		zconf->deleteValue(launch, "warp");
 	}
 
-	if (compatList->currentIndex() > 0){
-		zconf->setValue("zdl.save", "compatmode", compatList->currentData().toInt());
+	if (!build && compatList->currentIndex() > 0){
+		zconf->setValue(launch, "compatmode", compatList->currentData().toInt());
 	}else{
-		zconf->deleteValue("zdl.save", "compatmode");
+		zconf->deleteValue(launch, "compatmode");
 	}
 
-	if (fastCheck->isChecked()){
-		zconf->setValue("zdl.save", "fast", "1");
+	if (!build && fastCheck->isChecked()){
+		zconf->setValue(launch, "fast", "1");
 	}else{
-		zconf->deleteValue("zdl.save", "fast");
+		zconf->deleteValue(launch, "fast");
 	}
 
 	if (respawnCheck->isChecked()){
-		zconf->setValue("zdl.save", "respawn", "1");
+		zconf->setValue(launch, "respawn", "1");
 	}else{
-		zconf->deleteValue("zdl.save", "respawn");
+		zconf->deleteValue(launch, "respawn");
 	}
 
-	bool set=false;
-	ZDLSection *section = zconf->getSection("zdl.ports");
-	if (section){
-		int count = 0;
-		QVector<ZDLLine*> fileVctr;
-		section->getRegex(QString("^p[0-9]+f$"), fileVctr);
+	//The lists show only this tab's ports and games, so the one picked is
+	//stored by its name rather than by where it stands in the full list.
+	if (sourceList->currentIndex() >= 0)
+		zconf->setValue(launch, "port", sourceList->currentText());
+	else
+		zconf->deleteValue(launch, "port");
 
-		for(int i = 0; i < fileVctr.size(); i++){
-			QString value = fileVctr[i]->getVariable();
-
-			QString number = "^p";
-			number.append(value.mid(1, value.length()-2));
-			number.append("n$");
-
-			QVector<ZDLLine*> nameVctr;
-			section->getRegex(number, nameVctr);
-			if (nameVctr.size() == 1){
-				if (sourceList->currentIndex() == count){
-					zconf->setValue("zdl.save", "port", nameVctr[0]->getValue());
-					set=true;
-					break;
-				}
-				count++;
-			}
-		}
-	}
-	if (!set) zconf->deleteValue("zdl.save", "port");
-
-	set=false;
-	section = zconf->getSection("zdl.iwads");
-	if (section){
-		int count = 0;
-		QVector<ZDLLine*> fileVctr;
-		section->getRegex("^i[0-9]+f$", fileVctr);
-
-		for(int i = 0; i < fileVctr.size(); i++){
-			QString value = fileVctr[i]->getVariable();
-
-			QString number = "^i";
-			number.append(value.mid(1, value.length()-2));
-			number.append("n$");
-
-			QVector <ZDLLine*> nameVctr;
-			section->getRegex(number, nameVctr);
-			if (nameVctr.size() == 1){
-				if (IWADList->currentRow() == count){
-					zconf->setValue("zdl.save", "iwad", nameVctr[0]->getValue());
-					set=true;
-					break;
-				}
-				count++;
-			}
-		}
-	}
-	if (!set) zconf->deleteValue("zdl.save", "iwad");
+	QListWidgetItem *game = IWADList->currentRow() >= 0 ? IWADList->currentItem() : NULL;
+	if (game)
+		zconf->setValue(launch, "iwad", game->text());
+	else
+		zconf->deleteValue(launch, "iwad");
 }
 
 void ZDLSettingsPane::newConfig(){
 	LOGDATAO() << "Loading new config" << Qt::endl;
 	ZDLConf *zconf = ZDLConfigurationManager::getActiveConfiguration();
-	if(zconf->hasValue("zdl.save", "skill")){
+	loading = true;
+	if(zconf->hasValue(launch, "skill")){
 		int index = 0;
 		int stat = 0;
-		QString rc = zconf->getValue("zdl.save", "skill", &stat);
+		QString rc = zconf->getValue(launch, "skill", &stat);
 		if (rc.length() > 0){
 			index = rc.toInt();
 		}
-		if (index >= 0 && index <= 5){
+		//Six entries above Default: the five skills and No monsters, which
+		//the old bound of five threw away on every re-read.
+		if (index >= 0 && index <= 6){
 			diffList->setCurrentIndex(index);
 		}else{
-			zconf->setValue("zdl.save", "skill", 0);
+			zconf->setValue(launch, "skill", 0);
 			diffList->setCurrentIndex(0);
 		}
 
@@ -442,22 +496,23 @@ void ZDLSettingsPane::newConfig(){
 		diffList->setCurrentIndex(0);
 	}
 
-	if (zconf->hasValue("zdl.save", "warp")){
-		warpCombo->setEditText(zconf->getValue("zdl.save", "warp"));
+	if (zconf->hasValue(launch, "warp")){
+		warpCombo->setEditText(zconf->getValue(launch, "warp"));
 	}else{
 		warpCombo->clearEditText();
 	}
 
-	int compat = zconf->hasValue("zdl.save", "compatmode") ? compatList->findData(zconf->getValue("zdl.save", "compatmode").toInt()) : -1;
+	int compat = zconf->hasValue(launch, "compatmode") ? compatList->findData(zconf->getValue(launch, "compatmode").toInt()) : -1;
 	compatList->setCurrentIndex(compat > 0 ? compat : 0);
-	fastCheck->setChecked(zconf->hasValue("zdl.save", "fast") && zconf->getValue("zdl.save", "fast") == "1");
-	respawnCheck->setChecked(zconf->hasValue("zdl.save", "respawn") && zconf->getValue("zdl.save", "respawn") == "1");
+	fastCheck->setChecked(zconf->hasValue(launch, "fast") && zconf->getValue(launch, "fast") == "1");
+	respawnCheck->setChecked(zconf->hasValue(launch, "respawn") && zconf->getValue(launch, "respawn") == "1");
 
+	//This tab's ports: the Build engine's on the Build Engine tab, the rest
+	//on the Doom Engine tab.
 	sourceList->clear();
-	ZDLSection *section = zconf->getSection("zdl.ports");
-	if (section){
+	if (ZDLSection *ports = zconf->getSection("zdl.ports")){
 		QVector<ZDLLine*> fileVctr;
-		section->getRegex("^p[0-9]+f$", fileVctr);
+		ports->getRegex("^p[0-9]+f$", fileVctr);
 
 		for(int i = 0; i < fileVctr.size(); i++){
 			QString value = fileVctr[i]->getVariable();
@@ -467,17 +522,16 @@ void ZDLSettingsPane::newConfig(){
 			number.append("n$");
 			int stat = 0;
 			QVector<ZDLLine*> nameVctr;
-			section->getRegex(number, nameVctr);
-			if (nameVctr.size() == 1){
+			ports->getRegex(number, nameVctr);
+			if (nameVctr.size() == 1 && ZDLBuildArgs::isBuildPort(ZDLPaths::resolve(fileVctr[i]->getValue())) == build){
 				sourceList->addItem(nameVctr[0]->getValue(),stat);
 			}
 		}
 	}
-
-	if(zconf->hasValue("zdl.save", "port")){
+	if(zconf->hasValue(launch, "port")){
 		int set = 0;
 		int stat = 0;
-		QString rc = zconf->getValue("zdl.save", "port", &stat);
+		QString rc = zconf->getValue(launch, "port", &stat);
 
 		if(rc.length() > 0){
 			for(int i = 0; i < sourceList->count(); i++){
@@ -490,15 +544,15 @@ void ZDLSettingsPane::newConfig(){
 		}
 
 		if(!set){
-			zconf->deleteValue("zdl.save", "port");
+			zconf->deleteValue(launch, "port");
 		}
 	}
 
+	//This tab's games, the same way.
 	IWADList->clear();
-	section = zconf->getSection("zdl.iwads");
-	if (section){
+	if (ZDLSection *iwads = zconf->getSection("zdl.iwads")){
 		QVector<ZDLLine*> fileVctr;
-		section->getRegex("^i[0-9]+f$", fileVctr);
+		iwads->getRegex("^i[0-9]+f$", fileVctr);
 
 		for(int i = 0; i < fileVctr.size(); i++){
 			QString value = fileVctr[i]->getVariable();
@@ -508,19 +562,20 @@ void ZDLSettingsPane::newConfig(){
 			number.append("n$");
 
 			QVector<ZDLLine*> nameVctr;
-			section->getRegex(number, nameVctr);
-			if (nameVctr.size() == 1){
+			iwads->getRegex(number, nameVctr);
+			QString file = ZDLPaths::resolve(fileVctr[i]->getValue());
+			if (nameVctr.size() == 1 && ZDLBuildGames::isBuildGameFile(file) == build){
 				//Constructing with the list as parent already inserts the item.
 				QListWidgetItem *item = new QListWidgetItem(nameVctr[0]->getValue(),IWADList, 1001);
-				item->setData(32,ZDLPaths::resolve(fileVctr[i]->getValue()));
+				item->setData(32,file);
 			}
 		}
 	}
 
-	if(zconf->hasValue("zdl.save", "iwad")){
+	if(zconf->hasValue(launch, "iwad")){
 		int set = 0;
 		int stat = 0;
-		QString rc = zconf->getValue("zdl.save", "iwad", &stat);
+		QString rc = zconf->getValue(launch, "iwad", &stat);
 		if (rc.length() > 0){
 			for(int i = 0; i < IWADList->count(); i++){
 				QListWidgetItem *item = IWADList->item(i);
@@ -529,12 +584,16 @@ void ZDLSettingsPane::newConfig(){
 					set = 1;
 					IWADList->setCurrentRow(i);
 					break;
-				}	
+				}
 			}
 		}
 		if(!set){
-			zconf->deleteValue("zdl.save", "iwad");
+			zconf->deleteValue(launch, "iwad");
 		}
 	}
 
+	lastPortIndex = sourceList->currentIndex();
+	lastIwadRow = IWADList->currentRow();
+	loading = false;
+	showKeptApart();
 }

@@ -25,10 +25,13 @@
 #include "ZDLConfigurationManager.h"
 #include "ZDLNameInput.h"
 #include "ZDLFileInfo.h"
+#include "ZDLFinderDialog.h"
+#include "ZDLFileInspector.h"
 #include "gph_ast.xpm"
 
 const QString iwad_filters =
 	"IWAD files (*.wad" QFD_FILTER_DELIM "*.iwad" QFD_FILTER_DELIM "*.ipk3" QFD_FILTER_DELIM "*.ipk7);;"
+	"Build engine games (*.grp" QFD_FILTER_DELIM "*.rff" QFD_FILTER_DELIM "*.dat" QFD_FILTER_DELIM "*.ssi" QFD_FILTER_DELIM "*.zip" QFD_FILTER_DELIM "*.ini" QFD_FILTER_DELIM "*.con" QFD_FILTER_DELIM "*.art);;"
 	"All supported archives (*.zip" QFD_FILTER_DELIM "*.pk3" QFD_FILTER_DELIM "*.ipk3" QFD_FILTER_DELIM "*.7z" QFD_FILTER_DELIM "*.pk7" QFD_FILTER_DELIM "*.ipk7" QFD_FILTER_DELIM "*.p7z" QFD_FILTER_DELIM "*.pkz" QFD_FILTER_DELIM "*.pke);;"
 	"Specialized archives (*.pk3" QFD_FILTER_DELIM "*.ipk3" QFD_FILTER_DELIM "*.pk7" QFD_FILTER_DELIM "*.ipk7" QFD_FILTER_DELIM "*.p7z" QFD_FILTER_DELIM "*.pkz" QFD_FILTER_DELIM "*.pke);;"
 	"All files (" QFD_FILTER_ALL ")";
@@ -49,7 +52,31 @@ ZDLIWadList::ZDLIWadList(ZDLWidget *parent): ZDLListWidget(parent){
 	btnWizardAdd->setToolTip("Add and name item");
 	buttonRow->insertWidget(0, btnWizardAdd);
 
+	QPushButton *btnFind = new QPushButton("Find installed", this);
+	btnFind->setToolTip("Look where Steam, GOG, the Bethesda launcher and the ports themselves keep IWADs, and offer what is there");
+	buttonRow->insertWidget(1, btnFind);
+
 	QObject::connect(btnWizardAdd, SIGNAL(clicked()), this, SLOT(wizardAddButton()));
+	QObject::connect(btnFind, SIGNAL(clicked()), this, SLOT(findInstalled()));
+
+	pList->setContextMenuPolicy(Qt::CustomContextMenu);
+	QObject::connect(pList, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(showMenu(QPoint)));
+}
+
+void ZDLIWadList::findInstalled(){
+	ZDLFinderDialog::run(this, false, true);
+}
+
+//Right click on an IWAD: what it is and which release.
+void ZDLIWadList::showMenu(const QPoint &pos){
+	QListWidgetItem *item = pList->itemAt(pos);
+	if (!item)
+		return;
+
+	QMenu menu(this);
+	QAction *info = menu.addAction("File information...");
+	if (menu.exec(pList->viewport()->mapToGlobal(pos)) == info)
+		ZDLFileInspector::open(this, ZDLPaths::resolve(((ZDLNameListable*)item)->getFile()));
 }
 
 void ZDLIWadList::wizardAddButton(){

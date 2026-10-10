@@ -25,8 +25,17 @@
 class ZDLMapFile{
 	public:
 		static ZDLMapFile *getMapFile(QString file);
+		//The Name a file gives itself in its IWADINFO lump, or an empty
+		//string. An engine's own resource archive carries that lump as the
+		//list of every game it knows, one IWad block per game, and that
+		//describes nothing; only a lump with a single block counts.
+		static QString nameFromIwadinfo(const QString &text);
 		virtual QString getIwadinfoName() = 0;
 		virtual QStringList getMapNames() = 0;
+		//Every lump name in the file, upper case, the way the IWAD rules
+		//look at them: the WAD directory as it is, or an archive's file
+		//names without their extensions, cut to eight characters.
+		virtual QStringList getLumpNames() = 0;
 		virtual bool isMAPXX() = 0;
 		virtual ~ZDLMapFile() = 0;
 };

@@ -118,12 +118,8 @@ QString DoomWad::getIwadinfoName()
 						char* iwadinfo=new char[fileinfo[i].size+1];
 						iwadinfo[fileinfo[i].size]='\0';
 						
-						if (wad.seek(fileinfo[i].filepos)&&wad.read(iwadinfo, fileinfo[i].size)==fileinfo[i].size) {
-							QRegularExpression name_re("\\s+Name\\s*=\\s*\"(.+?)\"\\s+", QRegularExpression::CaseInsensitiveOption);
-							QRegularExpressionMatch name_m=name_re.match(QString::fromUtf8(iwadinfo));
-							if (name_m.hasMatch())
-								iwad_name=name_m.captured(1);
-						}
+						if (wad.seek(fileinfo[i].filepos)&&wad.read(iwadinfo, fileinfo[i].size)==fileinfo[i].size)
+							iwad_name=nameFromIwadinfo(QString::fromUtf8(iwadinfo));
 
 						delete[] iwadinfo;
 					}
@@ -137,6 +133,35 @@ QString DoomWad::getIwadinfoName()
 	}
 
 	return iwad_name;
+}
+
+QStringList DoomWad::getLumpNames()
+{
+	QFile wad(file);
+	QStringList names;
+
+	if (wad.open(QIODevice::ReadOnly)) {
+		wadinfo_t header;
+
+		//The count is bounded before it sizes an allocation: a file that only
+		//starts like a WAD can say anything there.
+		if (wad.read((char*)&header, sizeof(wadinfo_t))==sizeof(wadinfo_t)&&header.numlumps>0&&header.numlumps<1000000&&wad.seek(header.infotableofs)) {
+			filelump_t *fileinfo=new filelump_t[header.numlumps];
+			qint64 length=sizeof(filelump_t)*header.numlumps;
+
+			if (wad.read((char*)fileinfo, length)==length) {
+				names.reserve(header.numlumps);
+				for (int i=0; i<header.numlumps; i++)
+					names<<QString::fromLatin1(fileinfo[i].name, qstrnlen(fileinfo[i].name, 8)).toUpper();
+			}
+
+			delete[] fileinfo;
+		}
+
+		wad.close();
+	}
+
+	return names;
 }
 
 bool DoomWad::isMAPXX()

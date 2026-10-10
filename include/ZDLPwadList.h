@@ -52,6 +52,9 @@ class ZDLPwadList: public ZDLWidget {
 		void itemActivated(QTreeWidgetItem *item, int column);
 		void treeChanged(const QString &path);
 		void rescanTimeout();
+		void showMenu(const QPoint &pos);
+		void moveSelected();
+		void deleteSelected();
 	private:
 		//One scanned file. The relative path is what the flat views show and
 		//what the filter matches, so it is worked out once here.

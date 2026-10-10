@@ -18,8 +18,10 @@
 
 #include <QDirIterator>
 #include <QFileSystemWatcher>
+#include <QDesktopServices>
 #include <algorithm>
 #include "ZDLPwadList.h"
+#include "ZDLFileInspector.h"
 #include "ZDLPaths.h"
 #include "ZDLLaunchFiles.h"
 #include "ZDLConfigurationManager.h"
@@ -81,6 +83,7 @@ ZDLPwadList::ZDLPwadList(QWidget *parent): ZDLWidget(parent)
 	//enough to shove the panes beside it off the window.
 	tree->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
 	tree->setMinimumHeight(80);
+	tree->setContextMenuPolicy(Qt::CustomContextMenu);
 	column->addWidget(tree);
 
 	status=new QLabel(this);
@@ -124,6 +127,7 @@ ZDLPwadList::ZDLPwadList(QWidget *parent): ZDLWidget(parent)
 	QObject::connect(filter, SIGNAL(textChanged(QString)), this, SLOT(filterChanged(QString)));
 	QObject::connect(viewBox, SIGNAL(currentIndexChanged(int)), this, SLOT(viewChanged(int)));
 	QObject::connect(tree, SIGNAL(itemActivated(QTreeWidgetItem*,int)), this, SLOT(itemActivated(QTreeWidgetItem*,int)));
+	QObject::connect(tree, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(showMenu(QPoint)));
 	QObject::connect(watcher, SIGNAL(directoryChanged(QString)), this, SLOT(treeChanged(QString)));
 	QObject::connect(rescanTimer, SIGNAL(timeout()), this, SLOT(rescanTimeout()));
 }
@@ -444,4 +448,99 @@ void ZDLPwadList::itemActivated(QTreeWidgetItem *item, int column)
 	QList<ZDLFileEntry> entries;
 	entries<<ZDLFileEntry(path, false);
 	ZDLLaunchFiles::sendToLaunch(entries, false);
+}
+
+//Right click: what the Add button does, plus the housekeeping a library
+//needs now and then. Everything acts on the selection, folders included,
+//so a whole pack can be moved or thrown out at once.
+void ZDLPwadList::showMenu(const QPoint &pos)
+{
+	QTreeWidgetItem *item=tree->itemAt(pos);
+	if (item&&!item->isSelected()) {
+		tree->clearSelection();
+		item->setSelected(true);
+		tree->setCurrentItem(item);
+	}
+
+	QStringList files=selectedFiles();
+	if (files.isEmpty())
+		return;
+
+	QMenu menu(this);
+	QAction *add=menu.addAction(forwardToLaunch?"Add to external files":"Add to preset");
+	QAction *info=menu.addAction("File information...");
+	QAction *open=menu.addAction("Open containing folder");
+	menu.addSeparator();
+	QAction *move=menu.addAction("Move to folder...");
+	QAction *remove=menu.addAction(files.size()==1?QString("Delete"):QString("Delete %1 files").arg(files.size()));
+
+	QAction *picked=menu.exec(tree->viewport()->mapToGlobal(pos));
+	if (!picked)
+		return;
+
+	if (picked==add)
+		addSelected();
+	else if (picked==info)
+		ZDLFileInspector::open(this, files.first());
+	else if (picked==open)
+		QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(files.first()).absolutePath()));
+	else if (picked==move)
+		moveSelected();
+	else if (picked==remove)
+		deleteSelected();
+}
+
+//Moves the selected files into a folder of the user's choosing, under the
+//library's root or anywhere else. A name already taken there is left where
+//it is and reported, never overwritten.
+void ZDLPwadList::moveSelected()
+{
+	QStringList files=selectedFiles();
+	if (files.isEmpty())
+		return;
+
+	QString dest=QFileDialog::getExistingDirectory(this, "Move to folder", root, QFileDialog::ShowDirsOnly);
+	if (dest.isEmpty())
+		return;
+	dest=QFD_QT_SEP(dest);
+
+	QStringList failed;
+	foreach (const QString &file, files) {
+		QString target=QDir(dest).filePath(QFileInfo(file).fileName());
+		if (QFileInfo(target)==QFileInfo(file))
+			continue;
+		if (QFile::exists(target)||!QFile::rename(file, target))
+			failed<<QDir::toNativeSeparators(file);
+	}
+
+	scan();
+
+	if (!failed.isEmpty())
+		QMessageBox::warning(this, ZDL_APP_NAME, "Not moved, the name being taken there already or the file in use:\n\n"+failed.join("\n"));
+}
+
+//Deletes the selected files, to the recycle bin where there is one and for
+//good where there is not, after asking.
+void ZDLPwadList::deleteSelected()
+{
+	QStringList files=selectedFiles();
+	if (files.isEmpty())
+		return;
+
+	QString question=files.size()==1
+		?QString("Delete %1? It goes to the recycle bin where there is one, and is gone for good where there is not.").arg(QFileInfo(files.first()).fileName())
+		:QString("Delete these %1 files? They go to the recycle bin where there is one, and are gone for good where there is not.").arg(files.size());
+	if (QMessageBox::warning(this, ZDL_APP_NAME, question, QMessageBox::Yes|QMessageBox::No, QMessageBox::No)!=QMessageBox::Yes)
+		return;
+
+	QStringList failed;
+	foreach (const QString &file, files) {
+		if (!QFile::moveToTrash(file)&&!QFile::remove(file))
+			failed<<QDir::toNativeSeparators(file);
+	}
+
+	scan();
+
+	if (!failed.isEmpty())
+		QMessageBox::warning(this, ZDL_APP_NAME, "Could not delete:\n\n"+failed.join("\n"));
 }

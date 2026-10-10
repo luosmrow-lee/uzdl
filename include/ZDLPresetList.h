@@ -29,7 +29,11 @@
 class ZDLPresetList: public ZDLWidget {
 	Q_OBJECT
 	public:
-		ZDLPresetList(QWidget *parent);
+		//The presets of one tab, loaded into the launch configuration in
+		//target, the Doom Engine tab's unless given. The Build Engine tab's
+		//are the presets ZDLBuildArgs::isBuildLaunch says are the Build
+		//engine's; the Doom Engine tab has the rest.
+		ZDLPresetList(QWidget *parent, const QString &target=QString(), bool build=false);
 		virtual void rebuild();
 		virtual void newConfig();
 	protected slots:
@@ -44,6 +48,13 @@ class ZDLPresetList: public ZDLWidget {
 		void itemActivated(QListWidgetItem *item);
 		void showMenu(const QPoint &pos);
 	private:
+		//Whether the list goes by name rather than by the order the presets
+		//were made in; kept in the configuration.
+		bool sortByName();
+		void setSortByName(bool byName);
+		//Pinned presets sit at the top, whichever order the rest are in.
+		bool currentPinned();
+		void togglePin();
 		//Section name of the highlighted preset, empty when nothing is selected.
 		QString currentSection();
 		QString currentName();
@@ -54,6 +65,8 @@ class ZDLPresetList: public ZDLWidget {
 		void send(bool replace);
 
 		QListWidget *pList;
+		QString target;
+		bool build;
 };
 
 #endif

@@ -99,12 +99,7 @@ QString ZLibPK3::getIwadinfoName()
 						void *buf;
 						if ((buf=mz_zip_reader_extract_to_heap(&zip_archive, i, &buf_len, 0))) {
 							QByteArray char_buf=QByteArray::fromRawData((const char*)buf, buf_len);
-							
-							QRegularExpression name_re("\\s+Name\\s*=\\s*\"(.+?)\"\\s+", QRegularExpression::CaseInsensitiveOption);
-							QRegularExpressionMatch name_m=name_re.match(QString::fromUtf8(char_buf));
-							if (name_m.hasMatch())
-								iwad_name=name_m.captured(1);
-
+							iwad_name=nameFromIwadinfo(QString::fromUtf8(char_buf));
 							mz_free(buf);
 						}
 						break;
@@ -117,6 +112,31 @@ QString ZLibPK3::getIwadinfoName()
 	}
 
 	return iwad_name;
+}
+
+//Every entry as a lump name, whatever folder it sits in: the rules that
+//use these name lumps at the root, in graphics/ and under maps/, and an
+//accidental match from some other folder is too unlikely to guard against.
+QStringList ZLibPK3::getLumpNames()
+{
+	mz_zip_archive zip_archive={};
+	QStringList names;
+
+	if (mz_zip_reader_init_file(&zip_archive, qPrintable(file), 0)) {
+		mz_uint fnum=mz_zip_reader_get_num_files(&zip_archive);
+		mz_zip_archive_file_stat file_stat;
+
+		for (mz_uint i=0; i<fnum; i++) {
+			if (!mz_zip_reader_is_file_a_directory(&zip_archive, i)&&mz_zip_reader_file_stat(&zip_archive, i, &file_stat)) {
+				QFileInfo zname(file_stat.m_filename);
+				names<<zname.baseName().left(8).toUpper();
+			}
+		}
+
+		mz_zip_reader_end(&zip_archive);
+	}
+
+	return names;
 }
 
 bool ZLibPK3::isMAPXX()

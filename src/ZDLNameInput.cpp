@@ -49,7 +49,7 @@ ZDLNameInput::ZDLNameInput(QWidget *parent, const QString &last_used_dir, ZDLFil
 	if (params_offset) {
 		lparams = new QLineEdit(this);
 		lparams->setPlaceholderText("(Optional)");
-		lparams->setToolTip("Added to the command line whenever this source port is used, before the launch tab's own extra parameters");
+		lparams->setToolTip("Added to the command line whenever this source port is used, before the extra command line arguments of the tab it is launched from");
 		inputGrid->addWidget(new QLabel("Parameters", this),2,0,1,2);
 		inputGrid->addWidget(lparams,3,0,1,2);
 	}

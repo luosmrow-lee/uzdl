@@ -36,8 +36,11 @@ struct ZDLFileEntry {
 };
 
 namespace ZDLLaunchFiles {
-	//Section holding the launch configuration's own external file list.
+	//Section holding the launch configuration's own external file list: the
+	//Doom Engine tab's.
 	extern const char *LAUNCH_SECTION;
+	//The Build Engine tab's launch configuration, in the same layout.
+	extern const char *BUILD_SECTION;
 	//Prefix of the per-preset sections. Still zdl.mix for the sake of any
 	//preset saved before they were renamed; nothing user facing shows it.
 	extern const char *PRESET_PREFIX;
@@ -56,15 +59,45 @@ namespace ZDLLaunchFiles {
 	//different: when replacing they are set or cleared outright, since a
 	//folder left over from the previous preset would quietly catch the
 	//next one's saves.
-	void sendToLaunch(const QList<ZDLFileEntry> &entries, bool replace, const QString &port=QString(), const QString &iwad=QString(), const QString &savedir=QString(), const QString &config=QString());
+	//The target is the launch configuration's section: the Doom Engine tab's
+	//unless another is named.
+	void sendToLaunch(const QList<ZDLFileEntry> &entries, bool replace, const QString &port=QString(), const QString &iwad=QString(), const QString &savedir=QString(), const QString &config=QString(), const QString &target=QString());
+
+	//The configuration side of sendToLaunch on its own: no pane is flushed
+	//first or told afterwards. For callers that have nothing on screen to
+	//keep in step, or must not depend on it.
+	void apply(ZDLConf *zconf, const QList<ZDLFileEntry> &entries, bool replace, const QString &port=QString(), const QString &iwad=QString(), const QString &savedir=QString(), const QString &config=QString(), const QString &target=QString());
 
 	//Loads the preset in section: its files, and its port, IWAD, save
-	//folder and config file where it names them.
-	void loadPreset(ZDLConf *zconf, const QString &section);
+	//folder and config file where it names them; into the launch
+	//configuration of target, the Doom Engine tab's unless given.
+	void loadPreset(ZDLConf *zconf, const QString &section, const QString &target=QString());
+
+	//The same into the configuration only, for a launch straight from the
+	//command line.
+	void applyPreset(ZDLConf *zconf, const QString &section, const QString &target=QString());
+
+	//Puts the launch configuration of a .zdl file, its zdl.save section, in
+	//place of a tab's: the Build Engine tab's when the port or the game it
+	//names is the Build engine's, the Doom Engine tab's otherwise. Returns
+	//the section it went to, or an empty string for a file without one.
+	QString loadZdl(ZDLConf *zconf, ZDLConf *zdl);
+
+	//Marks a preset as made on the Build Engine tab, or clears the mark. It
+	//only counts for a preset that names no port or game; see
+	//ZDLBuildArgs::isBuildLaunch.
+	void markBuild(ZDLConf *zconf, const QString &section, bool build);
+	bool markedBuild(ZDLConf *zconf, const QString &section);
 
 	//The section of the preset called name, compared without regard to
 	//case, or an empty string when there is none.
 	QString presetSection(ZDLConf *zconf, const QString &name);
+
+	//Writes a preset's port, IWAD, save folder and config file: each set
+	//when given and dropped when blank, so blank means "leave the launch
+	//tab's own alone" for the first two and "the port's usual place" for
+	//the other two.
+	void storeChoices(ZDLConf *zconf, const QString &section, const QString &port, const QString &iwad, const QString &savedir, const QString &config);
 
 	//Preset sections, in ascending order.
 	QStringList presetSections(ZDLConf *zconf);

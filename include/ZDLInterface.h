@@ -44,8 +44,10 @@ private slots:
 	void launch();
 	void saveConfigFile();
 	void loadConfigFile();
+	void togglePortable(bool on);
 	void aboutClick();
 	void showCommandline();
+	void inspectFile();
 	void exitzdl();
 	void clearAllFields();
 	void clearAllPWads();
@@ -65,6 +67,7 @@ private:
 	void bottomPaneRebuild();
 	void bottomPaneNewConfig();
 	
+	QAction *portableAction;
 	QPushButton *btnEpr;
 	QPushButton *btnZDL;
 	QPushButton *btnLaunch;

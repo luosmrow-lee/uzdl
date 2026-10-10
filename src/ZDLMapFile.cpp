@@ -38,6 +38,18 @@ const magic_t zip_m={'P', 'K', 0x03, 0x04};
 ZDLMapFile::~ZDLMapFile()
 {}
 
+QString ZDLMapFile::nameFromIwadinfo(const QString &text)
+{
+	//A block opens with IWad on a line of its own, or IWad {.
+	QRegularExpression block("^\\s*IWad\\s*(\\{|$)", QRegularExpression::CaseInsensitiveOption|QRegularExpression::MultilineOption);
+	if (text.count(block)!=1)
+		return QString();
+
+	QRegularExpression name_re("\\s+Name\\s*=\\s*\"(.+?)\"\\s+", QRegularExpression::CaseInsensitiveOption);
+	QRegularExpressionMatch name_m=name_re.match(text);
+	return name_m.hasMatch()?name_m.captured(1):QString();
+}
+
 ZDLMapFile *ZDLMapFile::getMapFile(QString file)
 {
 	ZDLMapFile *mapfile=NULL;

@@ -19,6 +19,7 @@
 #include <QRegularExpression>
 #include <algorithm>
 #include "ZDLLaunchFiles.h"
+#include "ZDLBuildArgs.h"
 #include "ZDLPaths.h"
 #include "ZDLConfigurationManager.h"
 #include "ZDLMainWindow.h"
@@ -26,6 +27,7 @@
 extern ZDLMainWindow *mw;
 
 const char *ZDLLaunchFiles::LAUNCH_SECTION = "zdl.save";
+const char *ZDLLaunchFiles::BUILD_SECTION = "zdl.build";
 const char *ZDLLaunchFiles::PRESET_PREFIX = "zdl.mix";
 
 QList<ZDLFileEntry> ZDLLaunchFiles::read(ZDLConf *zconf, const QString &section)
@@ -73,7 +75,7 @@ void ZDLLaunchFiles::write(ZDLConf *zconf, const QString &section, const QList<Z
 	}
 }
 
-void ZDLLaunchFiles::sendToLaunch(const QList<ZDLFileEntry> &entries, bool replace, const QString &port, const QString &iwad, const QString &savedir, const QString &config)
+void ZDLLaunchFiles::sendToLaunch(const QList<ZDLFileEntry> &entries, bool replace, const QString &port, const QString &iwad, const QString &savedir, const QString &config, const QString &target)
 {
 	if (entries.isEmpty()&&!replace&&port.isEmpty()&&iwad.isEmpty())
 		return;
@@ -82,13 +84,20 @@ void ZDLLaunchFiles::sendToLaunch(const QList<ZDLFileEntry> &entries, bool repla
 	//excluded since the last read is lost when they re-read below.
 	mw->writeConfig();
 
-	ZDLConf *zconf=ZDLConfigurationManager::getActiveConfiguration();
+	apply(ZDLConfigurationManager::getActiveConfiguration(), entries, replace, port, iwad, savedir, config, target);
+
+	mw->startRead();
+}
+
+void ZDLLaunchFiles::apply(ZDLConf *zconf, const QList<ZDLFileEntry> &entries, bool replace, const QString &port, const QString &iwad, const QString &savedir, const QString &config, const QString &target)
+{
 	if (!zconf)
 		return;
+	const QString launch=target.isEmpty()?QString(LAUNCH_SECTION):target;
 
 	QList<ZDLFileEntry> merged;
 	if (!replace)
-		merged=read(zconf, LAUNCH_SECTION);
+		merged=read(zconf, launch);
 
 	foreach (const ZDLFileEntry &entry, entries) {
 		bool present=false;
@@ -103,26 +112,24 @@ void ZDLLaunchFiles::sendToLaunch(const QList<ZDLFileEntry> &entries, bool repla
 			merged<<entry;
 	}
 
-	write(zconf, LAUNCH_SECTION, merged);
+	write(zconf, launch, merged);
 
 	if (!port.isEmpty())
-		zconf->setValue(LAUNCH_SECTION, "port", port);
+		zconf->setValue(launch, "port", port);
 
 	if (!iwad.isEmpty())
-		zconf->setValue(LAUNCH_SECTION, "iwad", iwad);
+		zconf->setValue(launch, "iwad", iwad);
 
 	if (replace) {
 		if (savedir.isEmpty())
-			zconf->deleteValue(LAUNCH_SECTION, "savedir");
+			zconf->deleteValue(launch, "savedir");
 		else
-			zconf->setValue(LAUNCH_SECTION, "savedir", savedir);
+			zconf->setValue(launch, "savedir", savedir);
 		if (config.isEmpty())
-			zconf->deleteValue(LAUNCH_SECTION, "config");
+			zconf->deleteValue(launch, "config");
 		else
-			zconf->setValue(LAUNCH_SECTION, "config", config);
+			zconf->setValue(launch, "config", config);
 	}
-
-	mw->startRead();
 }
 
 static QString SectionValue(ZDLConf *zconf, const QString &section, const char *key)
@@ -130,7 +137,7 @@ static QString SectionValue(ZDLConf *zconf, const QString &section, const char *
 	return zconf->hasValue(section, key)?zconf->getValue(section, key):QString();
 }
 
-void ZDLLaunchFiles::loadPreset(ZDLConf *zconf, const QString &section)
+void ZDLLaunchFiles::loadPreset(ZDLConf *zconf, const QString &section, const QString &target)
 {
 	if (!zconf||section.isEmpty())
 		return;
@@ -139,18 +146,97 @@ void ZDLLaunchFiles::loadPreset(ZDLConf *zconf, const QString &section)
 		SectionValue(zconf, section, "port"),
 		SectionValue(zconf, section, "iwad"),
 		SectionValue(zconf, section, "savedir"),
-		SectionValue(zconf, section, "config"));
+		SectionValue(zconf, section, "config"),
+		target);
+}
+
+void ZDLLaunchFiles::applyPreset(ZDLConf *zconf, const QString &section, const QString &target)
+{
+	if (!zconf||section.isEmpty())
+		return;
+
+	apply(zconf, read(zconf, section), true,
+		SectionValue(zconf, section, "port"),
+		SectionValue(zconf, section, "iwad"),
+		SectionValue(zconf, section, "savedir"),
+		SectionValue(zconf, section, "config"),
+		target);
+}
+
+QString ZDLLaunchFiles::loadZdl(ZDLConf *zconf, ZDLConf *zdl)
+{
+	ZDLSection *from=zdl?zdl->getSection(LAUNCH_SECTION):NULL;
+	if (!zconf||!from)
+		return QString();
+
+	QString target=ZDLBuildArgs::isBuildChoice(zconf, SectionValue(zdl, LAUNCH_SECTION, "port"), SectionValue(zdl, LAUNCH_SECTION, "iwad"), false)
+		?QString(BUILD_SECTION):QString(LAUNCH_SECTION);
+
+	zconf->deleteSectionByName(target);
+	QVector<ZDLLine*> lines;
+	from->getRegex(".+", lines);
+	foreach (ZDLLine *line, lines)
+		zconf->setValue(target, line->getVariable(), line->getValue());
+	return target;
+}
+
+void ZDLLaunchFiles::markBuild(ZDLConf *zconf, const QString &section, bool build)
+{
+	if (!zconf)
+		return;
+	if (build)
+		zconf->setValue(section, "engine", "build");
+	else
+		zconf->deleteValue(section, "engine");
+}
+
+bool ZDLLaunchFiles::markedBuild(ZDLConf *zconf, const QString &section)
+{
+	return zconf&&zconf->hasValue(section, "engine")&&zconf->getValue(section, "engine")=="build";
 }
 
 QString ZDLLaunchFiles::presetSection(ZDLConf *zconf, const QString &name)
 {
+	//The editor refuses a name already in use, but a configuration from
+	//before it did can hold two presets called the same. Of those the newest
+	//that holds any files wins: the usual way to end up with a pair is Save
+	//as preset done twice, the first time over an empty list.
+	QString found;
+	bool foundFiles=false;
+
 	foreach (const QString &section, presetSections(zconf)) {
 		QString called=zconf->hasValue(section, "name")?zconf->getValue(section, "name"):section;
-		if (!called.compare(name, Qt::CaseInsensitive))
-			return section;
+		if (called.compare(name, Qt::CaseInsensitive))
+			continue;
+
+		bool hasFiles=!read(zconf, section).isEmpty();
+		if (hasFiles||!foundFiles) {
+			found=section;
+			foundFiles=hasFiles;
+		}
 	}
 
-	return QString();
+	return found;
+}
+
+void ZDLLaunchFiles::storeChoices(ZDLConf *zconf, const QString &section, const QString &port, const QString &iwad, const QString &savedir, const QString &config)
+{
+	if (!zconf)
+		return;
+
+	struct { const char *key; QString value; } choices[]={
+		{"port", port},
+		{"iwad", iwad},
+		{"savedir", savedir},
+		{"config", config}
+	};
+
+	for (size_t i=0; i<sizeof(choices)/sizeof(choices[0]); i++) {
+		if (choices[i].value.isEmpty())
+			zconf->deleteValue(section, choices[i].key);
+		else
+			zconf->setValue(section, choices[i].key, choices[i].value);
+	}
 }
 
 QStringList ZDLLaunchFiles::presetSections(ZDLConf *zconf)

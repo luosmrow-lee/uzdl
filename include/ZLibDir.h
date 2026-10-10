@@ -29,6 +29,7 @@ class ZLibDir: public ZDLMapFile {
 		ZLibDir(const QString &file);
 		virtual QString getIwadinfoName();
 		virtual QStringList getMapNames();
+		virtual QStringList getLumpNames();
 		virtual bool isMAPXX();
 		virtual ~ZLibDir();
 };
